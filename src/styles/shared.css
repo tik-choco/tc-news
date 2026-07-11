@@ -253,6 +253,71 @@
   color: var(--success);
 }
 
+/* --- Motion: entrance animation ------------------------------------------
+   タブ切り替え時の唐突な出現を避ける最小限の演出。ホーム
+   (homeSections.css)のトーンに合わせ、opacityのみのフェード + カードの
+   軽いstagger(6px/25ms上限)。 */
+
+.shared-view {
+  animation: shared-view-in 0.2s var(--ease);
+}
+
+.shared-list > li {
+  animation: shared-card-in 0.25s var(--ease) backwards;
+}
+
+.shared-list > li:nth-child(1) {
+  animation-delay: 0ms;
+}
+.shared-list > li:nth-child(2) {
+  animation-delay: 25ms;
+}
+.shared-list > li:nth-child(3) {
+  animation-delay: 50ms;
+}
+.shared-list > li:nth-child(4) {
+  animation-delay: 75ms;
+}
+.shared-list > li:nth-child(5) {
+  animation-delay: 100ms;
+}
+.shared-list > li:nth-child(6) {
+  animation-delay: 125ms;
+}
+.shared-list > li:nth-child(7) {
+  animation-delay: 150ms;
+}
+.shared-list > li:nth-child(n + 8) {
+  animation-delay: 175ms;
+}
+
+@keyframes shared-view-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes shared-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shared-view,
+  .shared-list > li {
+    animation: none;
+  }
+}
+
 @media (max-width: 768px) {
   /* Single column: back to normal page flow — .app-main is the one scroll
      container again, so the per-pane scrollbars are switched off. */
