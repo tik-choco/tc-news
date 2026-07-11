@@ -65,6 +65,9 @@ const ja = {
   inboxExpandAria: "新着アイテムを展開",
   inboxSelectAll: "すべて選択",
   inboxClearSelection: "選択解除",
+  // 明示的な選択モードのトグル(長押しでも入れる)
+  inboxSelectMode: "選択",
+  inboxSelectModeExit: "完了",
   // ほぼ同内容のアイテム(複数ソースが同じ話題を配信)をまとめた際のバッジ
   inboxDupAria: "似た内容のアイテムが他に{count}件あります",
   // Home tab: content-type filter chips above the main column (unified feed —
@@ -130,6 +133,8 @@ const en: typeof ja = {
   inboxExpandAria: "Expand incoming items",
   inboxSelectAll: "Select all",
   inboxClearSelection: "Clear selection",
+  inboxSelectMode: "Select",
+  inboxSelectModeExit: "Done",
   inboxDupAria: "{count} more similar items from other sources",
   filterAll: "All",
   filterArticles: "Articles",
