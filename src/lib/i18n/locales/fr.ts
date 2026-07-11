@@ -85,6 +85,8 @@ export const fr: Messages = {
     inboxExpandAria: "Développer les nouveaux éléments",
     inboxSelectAll: "Tout sélectionner",
     inboxClearSelection: "Effacer la sélection",
+    inboxSelectMode: "Sélectionner",
+    inboxSelectModeExit: "Terminé",
     // Badge « +N » sur une carte quand des actualités quasi identiques d'autres sources y sont regroupées
     inboxDupAria: "{count} éléments similaires supplémentaires d'autres sources",
     filterAll: "Tout",

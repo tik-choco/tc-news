@@ -48,13 +48,27 @@ function FeedItemCard(props: {
   selectionActive: boolean;
   onToggle: () => void;
   onCheckboxInteract: (shiftKey: boolean) => void;
+  /** 長押し(モバイル)で選択モードに入りつつ、このアイテムをトグルする。 */
+  onLongPress: () => void;
   onOpen: () => void;
   locale: Locale;
   untitledLabel: string;
   selectAriaLabel: string;
 }): JSX.Element {
-  const { item, duplicates, index, checked, selectionActive, onToggle, onCheckboxInteract, onOpen, locale, untitledLabel, selectAriaLabel } =
-    props;
+  const {
+    item,
+    duplicates,
+    index,
+    checked,
+    selectionActive,
+    onToggle,
+    onCheckboxInteract,
+    onLongPress,
+    onOpen,
+    locale,
+    untitledLabel,
+    selectAriaLabel,
+  } = props;
   const t = useT();
 
   // RSSがすでに画像/動画を持っていればそれを使い、なければリンク先の
@@ -94,7 +108,7 @@ function FeedItemCard(props: {
         // Vibration API未対応/権限拒否は無視して選択だけ続行。
       }
       suppressClickRef.current = true;
-      onToggle();
+      onLongPress();
     }, LONG_PRESS_MS);
   }
 
@@ -113,14 +127,15 @@ function FeedItemCard(props: {
     clearLongPressTimer();
   }
 
-  function handleClick() {
+  function handleClick(e: JSX.TargetedMouseEvent<HTMLDivElement>) {
     // 長押しが発火した直後についてくるclickは無視(二重トグル防止)。
     if (suppressClickRef.current) {
       suppressClickRef.current = false;
       return;
     }
     if (selectionActive) {
-      onToggle();
+      // shift+クリックでチェックボックスと同じ範囲選択ロジックに乗せる。
+      onCheckboxInteract(e.shiftKey);
     } else {
       onOpen();
     }
@@ -172,41 +187,35 @@ function FeedItemCard(props: {
         />
       ) : null}
       <div class="feed-item-row">
-        <input
-          type="checkbox"
-          checked={checked}
-          onChange={() => {
-            // 実際の状態更新はonClick側(シフト範囲選択対応)で行うため、
-            // 制御コンポーネント用の空ハンドラのみ用意しておく。
-          }}
-          onClick={(e) => {
-            e.stopPropagation();
-            // preventDefaultは呼ばない: ブラウザはclick配送の完了後に
-            // キャンセル済みチェックボックスのDOM状態を巻き戻すが、Preactの
-            // 再レンダー(マイクロタスク)はその巻き戻しより先に走るため、
-            // 書き込んだchecked=trueが巻き戻しに潰されて「選択されたのに
-            // チェックが出ない」状態になる。ネイティブのトグル結果と
-            // ここでの状態更新は常に同じ値なので、素通しで整合する。
-            onCheckboxInteract(e.shiftKey);
-          }}
-          aria-label={selectAriaLabel}
-        />
+        {selectionActive ? (
+          <input
+            type="checkbox"
+            checked={checked}
+            onChange={() => {
+              // 実際の状態更新はonClick側(シフト範囲選択対応)で行うため、
+              // 制御コンポーネント用の空ハンドラのみ用意しておく。
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
+              // preventDefaultは呼ばない: ブラウザはclick配送の完了後に
+              // キャンセル済みチェックボックスのDOM状態を巻き戻すが、Preactの
+              // 再レンダー(マイクロタスク)はその巻き戻しより先に走るため、
+              // 書き込んだchecked=trueが巻き戻しに潰されて「選択されたのに
+              // チェックが出ない」状態になる。ネイティブのトグル結果と
+              // ここでの状態更新は常に同じ値なので、素通しで整合する。
+              onCheckboxInteract(e.shiftKey);
+            }}
+            aria-label={selectAriaLabel}
+          />
+        ) : null}
         <div class="feed-item-body">
-          <a
-            class="feed-item-title"
-            href={item.link}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {item.title || untitledLabel}
-          </a>
+          <span class="feed-item-title">{item.title || untitledLabel}</span>
           <div class="feed-item-meta">
-            <span>{item.feedLabel}</span>
+            <span class="feed-item-source">{item.feedLabel}</span>
             <span class="feed-item-dot" aria-hidden="true">
               ・
             </span>
-            <span>{formatRelativeTime(item.publishedAt, locale)}</span>
+            <span class="feed-item-time">{formatRelativeTime(item.publishedAt, locale)}</span>
             {category ? <span class="category-chip">{t(categoryLabelKey(category))}</span> : null}
             {duplicates && duplicates.length > 0 ? (
               <span
@@ -239,6 +248,9 @@ export function FeedInbox(props: {
   const { locale } = useLocale();
   const [collapsed, setCollapsed] = useState<boolean>(readCollapsedInitial);
   const [filterCat, setFilterCat] = useState<ArticleCategory | null>(null);
+  // 明示的な選択モード。トグルボタン(または長押し)で入り、「完了」で
+  // 抜ける。selectedIds.sizeが0になっても勝手には終了しない。
+  const [selectionMode, setSelectionMode] = useState(false);
 
   // シフトクリックによる範囲選択の起点。直近でチェックボックスを操作した
   // 代表アイテムのidを覚えておく(選択トグルの再レンダーは挟まない)。
@@ -265,7 +277,9 @@ export function FeedInbox(props: {
     : groups;
   const visibleIds = useMemo(() => visibleGroups.map((group) => group.item.id), [visibleGroups]);
 
-  const selectionActive = selectedIds.size > 0;
+  // 選択UI(チェックボックス等)の表示条件: 選択モード中、またはモーダル
+  // 側の「選択に追加」等で既に何か選ばれている場合。
+  const selectionActive = selectionMode || selectedIds.size > 0;
   const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
 
   function toggleCollapsed() {
@@ -301,6 +315,14 @@ export function FeedInbox(props: {
     onSelectMany(visibleIds, !allVisibleSelected);
   }
 
+  // 選択モードの終了(「完了」ボタン)。選択中のアイテムも合わせて解除する。
+  function handleSelectionModeExit() {
+    if (selectedIds.size > 0) {
+      onSelectMany([...selectedIds], false);
+    }
+    setSelectionMode(false);
+  }
+
   return (
     <section class="feed-inbox">
       <div class="feed-inbox-head">
@@ -310,9 +332,20 @@ export function FeedInbox(props: {
         </h2>
         <p class="feed-inbox-hint">{t("feed.inboxHint")}</p>
         {!collapsed && visibleGroups.length > 0 ? (
-          <button type="button" class="btn btn-ghost btn-small" onClick={handleSelectAllToggle}>
-            {allVisibleSelected ? t("feed.inboxClearSelection") : t("feed.inboxSelectAll")}
-          </button>
+          <>
+            {selectionActive ? (
+              <button type="button" class="btn btn-ghost btn-small" onClick={handleSelectAllToggle}>
+                {allVisibleSelected ? t("feed.inboxClearSelection") : t("feed.inboxSelectAll")}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              class="btn btn-ghost btn-small"
+              onClick={() => (selectionMode ? handleSelectionModeExit() : setSelectionMode(true))}
+            >
+              {selectionMode ? t("feed.inboxSelectModeExit") : t("feed.inboxSelectMode")}
+            </button>
+          </>
         ) : null}
         <button
           type="button"
@@ -363,6 +396,10 @@ export function FeedInbox(props: {
                 selectionActive={selectionActive}
                 onToggle={() => onToggleSelect(group.item.id)}
                 onCheckboxInteract={(shiftKey) => handleCheckboxInteract(group.item.id, shiftKey)}
+                onLongPress={() => {
+                  setSelectionMode(true);
+                  onToggleSelect(group.item.id);
+                }}
                 onOpen={() => onOpenItem(group.item)}
                 locale={locale}
                 untitledLabel={t("feed.untitledItem")}
