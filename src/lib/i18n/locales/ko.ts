@@ -85,6 +85,11 @@ export const ko: Messages = {
     inboxClearSelection: "전체 해제",
     // 다른 소스에서 온 거의 동일한 항목들을 하나로 묶었을 때 카드에 표시되는 "+N" 배지
     inboxDupAria: "다른 출처의 비슷한 항목이 {count}건 더 있습니다",
+    filterAll: "전체",
+    filterArticles: "기사",
+    filterAudio: "오디오",
+    programsHeading: "프로그램",
+    ownAuthorLabel: "나",
   },
 
   articles: {
@@ -329,7 +334,7 @@ export const ko: Messages = {
   },
 
   program: {
-    tabLabel: "프로그램",
+    tabLabel: "스튜디오",
     title: "뉴스 프로그램",
     createHeading: "프로그램 만들기",
     createHint: "선택한 기사를 바탕으로 AI가 라디오 스타일의 낭독 대본을 생성합니다.",
@@ -368,5 +373,11 @@ export const ko: Messages = {
     downloadFailed: "다운로드에 실패했습니다: {detail}",
     popularHeading: "오늘의 인기 프로그램",
     popularEmpty: "오늘은 아직 프로그램에 반응이 없습니다.",
+  },
+
+  player: {
+    pause: "일시정지",
+    resume: "재개",
+    stop: "정지",
   },
 };
