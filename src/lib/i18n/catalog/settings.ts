@@ -12,6 +12,8 @@ const ja = {
   switchToLight: "ライトモードに切替",
   tabGeneral: "全般",
   tabLlm: "LLM",
+  tabNetwork: "AI Network",
+  tabTts: "音声",
   language: "言語",
   displayName: "表示名",
   roomId: "共有ルームID",
@@ -75,6 +77,10 @@ const ja = {
   networkStatusSearching: "プロバイダーを探しています...",
   networkStatusConnected: "接続済み(モデル: {models})",
   networkStatusError: "エラー: {detail}",
+  networkProviderEnabled: "自分のLLMをAI Networkへ提供する",
+  networkProviderHint:
+    "既定のプリセットの接続先を使って、ルーム内の他のピア(コンシューマー)からのLLMリクエストに応答します。設定画面を閉じても提供は継続します。",
+  networkProviderNotConfigured: "既定のプリセットに接続先とモデルを設定すると提供を開始できます。",
   ttsHeading: "TTS(読み上げ)",
   ttsHint:
     "番組の読み上げにOpenAI互換の音声合成API(/audio/speech)を使います。無効・未設定のときはブラウザ内蔵のTTSを使います。",
@@ -96,6 +102,8 @@ const en: typeof ja = {
   switchToLight: "Switch to light mode",
   tabGeneral: "General",
   tabLlm: "LLM",
+  tabNetwork: "AI Network",
+  tabTts: "Voice",
   language: "Language",
   displayName: "Display name",
   roomId: "Shared room ID",
@@ -159,6 +167,10 @@ const en: typeof ja = {
   networkStatusSearching: "Looking for a provider...",
   networkStatusConnected: "Connected (models: {models})",
   networkStatusError: "Error: {detail}",
+  networkProviderEnabled: "Share this app's LLM with the AI Network",
+  networkProviderHint:
+    "Answers LLM requests from other peers (consumers) in the room using the default preset's endpoint. Providing keeps running even while the settings screen is closed.",
+  networkProviderNotConfigured: "Set a Base URL and model on the default preset to start providing.",
   ttsHeading: "TTS (speech)",
   ttsHint:
     "Uses an OpenAI-compatible speech API (/audio/speech) to read programs aloud. When disabled or unconfigured, the browser's built-in TTS is used instead.",

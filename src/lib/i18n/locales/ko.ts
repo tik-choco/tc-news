@@ -165,6 +165,8 @@ export const ko: Messages = {
     switchToLight: "라이트 모드로 전환",
     tabGeneral: "일반",
     tabLlm: "LLM",
+    tabNetwork: "AI Network",
+    tabTts: "음성",
     language: "언어",
     displayName: "표시 이름",
     roomId: "공유 룸 ID",
@@ -227,6 +229,10 @@ export const ko: Messages = {
     networkStatusSearching: "프로바이더를 찾는 중...",
     networkStatusConnected: "연결됨(모델: {models})",
     networkStatusError: "오류: {detail}",
+    networkProviderEnabled: "내 LLM을 AI Network에 제공",
+    networkProviderHint:
+      "기본 프리셋의 연결 주소를 사용해 룸 내 다른 피어(소비자)의 LLM 요청에 응답합니다. 설정 화면을 닫아도 제공은 계속됩니다.",
+    networkProviderNotConfigured: "기본 프리셋에 연결 주소와 모델을 설정하면 제공을 시작할 수 있습니다.",
     ttsHeading: "TTS(음성 합성)",
     ttsHint:
       "프로그램 낭독에 OpenAI 호환 음성 합성 API(/audio/speech)를 사용합니다. 비활성화되어 있거나 설정하지 않으면 브라우저 내장 TTS를 사용합니다.",

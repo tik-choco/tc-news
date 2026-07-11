@@ -102,3 +102,27 @@ export async function requestChatCompletion(
     throw new Error(formatMistaiError(err, messages2, tGlobal("errors.llmCallFailed")));
   }
 }
+
+/**
+ * Streaming variant used by the AI Network provider lifecycle (app.tsx) to
+ * forward llm_request traffic from remote consumers to this app's configured
+ * endpoint. Always calls the API directly — never routes back through the
+ * network consumer, which would loop the request into the room it came from.
+ * `model` overrides the target's own model when the requester asked for a
+ * specific one. Modeled on tc-town's src/lib/llm.ts.
+ */
+export async function requestApiChatCompletionStreaming(
+  target: ResolvedLlmTargetV1,
+  messages: ChatMessage[],
+  model: string | undefined,
+  onDelta: (delta: string) => void,
+): Promise<string> {
+  const config = apiConfig(target);
+  const full = await streamChatCompletion({ ...config, model: (model ?? config.model ?? "").trim() }, messages, onDelta);
+
+  if (!full.trim()) {
+    throw new MistaiError("UPSTREAM_BAD_RESPONSE", tGlobal("errors.llmEmptyResponse"));
+  }
+
+  return full;
+}

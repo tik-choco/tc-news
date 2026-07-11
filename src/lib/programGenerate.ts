@@ -122,13 +122,21 @@ export async function generateProgram(
 
     const title = typeof data.title === "string" && data.title.trim() ? data.title.trim() : tGlobal("program.untitledProgram");
 
-    return {
+    const articlesById = new Map(articles.map((a) => [a.id, a]));
+    const segmentImageUrl = segments
+      .map((s) => (s.articleId ? articlesById.get(s.articleId)?.imageUrl : undefined))
+      .find((url): url is string => Boolean(url));
+    const imageUrl = segmentImageUrl ?? articles.find((a) => a.imageUrl)?.imageUrl;
+
+    const program: RadioProgram = {
       id: newProgramId(),
       title,
       segments,
       createdAt: Date.now(),
       lang: options.locale,
     };
+    if (imageUrl) program.imageUrl = imageUrl;
+    return program;
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     throw new Error(tGlobal("program.generateFailed", { detail }));

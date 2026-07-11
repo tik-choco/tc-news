@@ -35,6 +35,8 @@ export interface ProviderSettings {
   ttsEnabled: boolean;
   /** AI NetworkルームへLLM呼び出しを流すか(lib/network.ts)。 */
   networkConsumerEnabled: boolean;
+  /** 自分の既定プリセットのLLMをAI Networkルームへ提供するか(app.tsxがホスト)。 */
+  networkProviderEnabled: boolean;
   /** 編集部生成のorchestrator役に使うpreset id。""はdefaultPresetIdに従う。 */
   orchestratorPresetId: string;
   /** 編集部生成のworker役に使うpreset id。""はdefaultPresetIdに従う。 */
@@ -45,6 +47,7 @@ function defaultProviderSettings(): ProviderSettings {
   return {
     ttsEnabled: false,
     networkConsumerEnabled: false,
+    networkProviderEnabled: false,
     orchestratorPresetId: "",
     workerPresetId: "",
   };
@@ -58,6 +61,7 @@ function sanitizeSettings(value: Record<string, unknown>): ProviderSettings {
   return {
     ttsEnabled: value.ttsEnabled === true,
     networkConsumerEnabled: value.networkConsumerEnabled === true,
+    networkProviderEnabled: value.networkProviderEnabled === true,
     orchestratorPresetId: typeof value.orchestratorPresetId === "string" ? value.orchestratorPresetId : "",
     workerPresetId: typeof value.workerPresetId === "string" ? value.workerPresetId : "",
   };
@@ -193,6 +197,8 @@ function migrateLegacySettings(raw: Record<string, unknown>): ProviderSettings {
   return {
     ttsEnabled: isRecord(raw.tts) && raw.tts.enabled === true,
     networkConsumerEnabled: raw.networkConsumerEnabled === true,
+    // 旧形式にはprovider提供の概念がないため常にオフで開始する。
+    networkProviderEnabled: false,
     orchestratorPresetId: rolePointer(raw.orchestratorProfileId),
     workerPresetId: rolePointer(raw.workerProfileId),
   };
@@ -221,4 +227,29 @@ export function saveProviderSettings(settings: ProviderSettings): void {
   } catch (error) {
     console.warn("tc-news: failed to persist provider settings", error);
   }
+  for (const listener of listeners) listener(settings);
+}
+
+// ---- change subscription ----------------------------------------------------
+// app.tsx hosts the AI Network provider lifecycle (so it keeps serving while
+// the settings screen is closed) and needs to react when SettingsView toggles
+// networkProviderEnabled. Same-tab saves notify synchronously via the listener
+// set; cross-tab edits arrive through the browser's `storage` event.
+
+type ProviderSettingsListener = (settings: ProviderSettings) => void;
+const listeners = new Set<ProviderSettingsListener>();
+let storageHooked = false;
+
+/** Subscribes to ProviderSettings changes (this tab and other tabs). Returns an unsubscribe function. */
+export function subscribeProviderSettings(listener: ProviderSettingsListener): () => void {
+  if (!storageHooked && typeof window !== "undefined") {
+    storageHooked = true;
+    window.addEventListener("storage", (e) => {
+      if (e.key !== SETTINGS_KEY) return;
+      const current = loadProviderSettings();
+      for (const l of listeners) l(current);
+    });
+  }
+  listeners.add(listener);
+  return () => listeners.delete(listener);
 }

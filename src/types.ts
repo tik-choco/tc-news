@@ -76,6 +76,7 @@ export interface RadioProgram {
   audioCids?: string[];
   audioMime?: string;  // audioCids のMIMEタイプ(現状 "audio/mpeg")
   audioVoice?: string; // レンダリングに使った声のID(表示用)
+  imageUrl?: string;   // サムネイル(生成元記事のNewsArticle.imageUrlから引き継ぐ。絶対URL)
 }
 
 // LLM接続情報(provider)・モデル設定(preset)自体はもう tc-news 固有の型ではなく、

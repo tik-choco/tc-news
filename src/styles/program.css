@@ -181,6 +181,19 @@
   box-shadow: 0 0 0 2px var(--primary-soft);
 }
 
+/* Optional program thumbnail, inherited from the generating articles —
+   see .article-card-thumb in components.css for the same fixed-square
+   pattern. Only rendered when the program has an imageUrl and media
+   previews are enabled; the row layout is unaffected when absent. */
+.program-row-thumb {
+  flex: 0 0 auto;
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: var(--radius-m);
+  background: var(--surface-2);
+}
+
 .program-row-text {
   display: flex;
   flex: 1 1 auto;

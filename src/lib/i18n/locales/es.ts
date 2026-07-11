@@ -168,6 +168,8 @@ export const es: Messages = {
     switchToLight: "Cambiar a modo claro",
     tabGeneral: "General",
     tabLlm: "LLM",
+    tabNetwork: "AI Network",
+    tabTts: "Voz",
     language: "Idioma",
     displayName: "Nombre para mostrar",
     roomId: "ID de sala compartida",
@@ -235,6 +237,10 @@ export const es: Messages = {
     networkStatusSearching: "Buscando un proveedor...",
     networkStatusConnected: "Conectado (modelos: {models})",
     networkStatusError: "Error: {detail}",
+    networkProviderEnabled: "Compartir el LLM de esta app con la AI Network",
+    networkProviderHint:
+      "Responde a las solicitudes de LLM de otros pares (consumidores) de la sala usando el endpoint del preset predeterminado. Sigue funcionando aunque cierres la pantalla de ajustes.",
+    networkProviderNotConfigured: "Configura una Base URL y un modelo en el preset predeterminado para empezar a proveer.",
     ttsHeading: "TTS (voz)",
     ttsHint:
       "Usa una API de voz compatible con OpenAI (/audio/speech) para leer los programas en voz alta. Si está desactivado o sin configurar, se usará la síntesis de voz integrada del navegador.",
