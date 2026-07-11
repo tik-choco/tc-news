@@ -1,0 +1,138 @@
+/* JobQueueToast (components/JobQueueToast.tsx) — passive
+   fixed-position progress toast for the global AI job queue. Sits
+   below FeedItemModal's overlay (z-index 100, see feedModal.css) so the
+   modal always stays on top of it. Tokens only, from index.css — both
+   themes covered automatically. */
+
+.tq-toast {
+  position: fixed;
+  right: var(--space-4);
+  bottom: var(--space-4);
+  z-index: 90;
+  width: min(340px, calc(100vw - var(--space-4) * 2));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  box-shadow: var(--shadow-2);
+  pointer-events: auto;
+}
+
+.tq-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.tq-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tq-count {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 1px var(--space-2);
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--primary);
+  background: var(--primary-soft);
+  border: 1px solid var(--primary-border);
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+}
+
+.tq-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.tq-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+}
+
+.tq-item--failed {
+  border-color: var(--danger-border);
+}
+
+.tq-item--cancelled {
+  opacity: 0.7;
+}
+
+.tq-item-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.tq-label {
+  overflow: hidden;
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tq-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-top: 2px;
+  overflow: hidden;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tq-item--failed .tq-status {
+  color: var(--danger-text);
+}
+
+.tq-cancel {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  color: var(--text-subtle);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease);
+}
+
+.tq-cancel:hover {
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-color: var(--danger-border);
+}
+
+@media (max-width: 640px) {
+  .tq-toast {
+    right: var(--space-3);
+    bottom: var(--space-3);
+    left: var(--space-3);
+    width: auto;
+  }
+}

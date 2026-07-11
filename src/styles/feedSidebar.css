@@ -1,0 +1,228 @@
+/* FeedManageSidebar: appearance-only rules for the collapsible feed
+   management sidebar (add/edit/remove/refresh RSS feeds). Grid placement
+   (grid-column/grid-row/position) and width are owned by the parent
+   FeedView layout in feed.css — this file only styles the component's own
+   box and its internals. */
+
+.feed-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  /* Own scrollbar, independent of neighboring panes. */
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-l);
+  box-shadow: var(--shadow-1);
+}
+
+.feed-sidebar:not(.feed-sidebar--collapsed) {
+  animation: feedSidebar-panel-in 0.2s var(--ease);
+}
+
+@keyframes feedSidebar-panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.feed-sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.feed-sidebar-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  margin-right: auto;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.feed-sidebar-status {
+  margin: calc(var(--space-3) * -1) 0 0;
+  font-size: 0.76rem;
+  color: var(--text-subtle);
+}
+
+.feed-add-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+
+.feed-add-form .btn {
+  justify-content: center;
+}
+
+.feed-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+}
+
+.feed-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-1);
+  border-radius: var(--radius-s);
+}
+
+.feed-row:hover {
+  background: var(--surface-2);
+}
+
+.feed-row-toggle {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  gap: var(--space-2);
+  cursor: pointer;
+}
+
+.feed-row-toggle input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
+.feed-row-label {
+  overflow: hidden;
+  font-size: 0.85rem;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.feed-row-error {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 0.72rem;
+  color: var(--danger-text);
+}
+
+/* Inline edit form, shown in place of a feed row's toggle+label while that
+   row is being edited (one row at a time). */
+.feed-row--editing {
+  align-items: stretch;
+}
+
+.feed-row-edit {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  gap: var(--space-2);
+}
+
+/* Base input look (color/background/border/focus) comes from the global
+   input rules in components.css — same as .feed-add-form input already
+   gets. Only the sizing is trimmed down to fit the narrow sidebar. */
+.feed-row-edit input {
+  padding: var(--space-2) var(--space-3);
+  font-size: 0.82rem;
+}
+
+.feed-row-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.feed-list-empty {
+  padding: var(--space-4) var(--space-2);
+  font-size: 0.82rem;
+  color: var(--text-subtle);
+  text-align: center;
+}
+
+/* --- Collapsed mode: a single small round floating icon button ------------- */
+
+.feed-sidebar--collapsed {
+  align-items: flex-start;
+  padding: 0;
+  background: none;
+  border: none;
+  box-shadow: none;
+  overflow: visible;
+}
+
+.feed-sidebar-fab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: transform var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+  animation: feedSidebar-fab-in 0.15s var(--ease);
+}
+
+.feed-sidebar-fab:hover {
+  color: var(--primary);
+  border-color: var(--primary-border);
+  box-shadow: var(--shadow-2);
+  transform: translateY(-1px);
+}
+
+@keyframes feedSidebar-fab-in {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .feed-sidebar--collapsed {
+    flex-direction: row;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .feed-sidebar:not(.feed-sidebar--collapsed) {
+    animation: none;
+  }
+
+  .feed-sidebar-fab {
+    transition: none;
+    animation: none;
+  }
+
+  .feed-sidebar-fab:hover {
+    transform: none;
+  }
+}

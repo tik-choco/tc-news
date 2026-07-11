@@ -1,0 +1,293 @@
+/* SharedView: source switch (room/global) + connection status bar +
+   received-article list/reader, same two-pane pattern as ArticlesView but
+   with save/forward/mute reader actions instead of per-card share/delete. */
+
+.shared-view {
+  display: grid;
+  grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
+  /* minmax(0, 1fr) (not bare 1fr, whose min is auto/content-sized) so the
+     pane row is bounded by the viewport and the panes below can scroll
+     independently instead of stretching the page. */
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: var(--space-5);
+  height: 100%;
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: var(--space-5);
+  align-items: start;
+}
+
+.shared-source-switch {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  display: inline-flex;
+  gap: var(--space-1);
+  padding: 3px;
+  width: fit-content;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+}
+
+.shared-source-btn {
+  padding: var(--space-2) var(--space-4);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+
+.shared-source-btn:hover {
+  color: var(--text);
+}
+
+.shared-source-btn--active {
+  color: var(--on-primary);
+  background: var(--primary);
+}
+
+.shared-source-btn--active:hover {
+  color: var(--on-primary);
+}
+
+.shared-status-bar {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  box-shadow: var(--shadow-1);
+}
+
+.shared-status-dot {
+  width: 9px;
+  height: 9px;
+  flex-shrink: 0;
+  background: var(--text-subtle);
+  border-radius: 50%;
+}
+
+.shared-status-dot--online {
+  background: var(--success);
+  box-shadow: 0 0 0 3px var(--success-soft);
+}
+
+.shared-status-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shared-status-peers {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-shrink: 0;
+  font-weight: 600;
+  color: var(--text-subtle);
+}
+
+.shared-list-pane {
+  grid-column: 1;
+  grid-row: 3;
+  min-width: 0;
+  /* Own scrollbar, independent of the reader's (align-self overrides the
+     grid's align-items: start so the pane fills its track). */
+  align-self: stretch;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.shared-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* --- Category filter chips (top of list pane) -------------------------------
+   Same look as ArticlesView's filter row (see styles/articles.css) — kept as
+   a duplicate rule set here since each view owns its own stylesheet. */
+
+.category-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.category-filter-chip {
+  padding: var(--space-1) var(--space-3);
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease);
+}
+
+.category-filter-chip:hover {
+  color: var(--text);
+  background: var(--surface-3);
+}
+
+.category-filter-chip--active {
+  color: var(--on-primary);
+  background: var(--primary);
+  border-color: var(--primary);
+}
+
+.category-filter-chip--active:hover {
+  color: var(--on-primary);
+  background: var(--primary);
+}
+
+.shared-muted-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  font-size: 0.78rem;
+  color: var(--text-subtle);
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-m);
+}
+
+.shared-reader-pane {
+  grid-column: 2;
+  grid-row: 3;
+  min-width: 0;
+  /* Own scrollbar, independent of the list's (the former min-height: 60vh
+     is superseded by stretching to the bounded 1fr track). */
+  align-self: stretch;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-6);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-l);
+  box-shadow: var(--shadow-1);
+}
+
+.shared-reader-pane:has(.empty-state) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.shared-back-btn {
+  display: none;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+  padding: 0;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.shared-back-btn:hover {
+  color: var(--primary);
+}
+
+.shared-reader-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+
+.shared-chat-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+
+.shared-chat-link:hover {
+  background: var(--surface-3);
+}
+
+.shared-reader-notice {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--success);
+}
+
+@media (max-width: 768px) {
+  /* Single column: back to normal page flow — .app-main is the one scroll
+     container again, so the per-pane scrollbars are switched off. */
+  .shared-view {
+    display: block;
+    height: auto;
+    padding: var(--space-4);
+  }
+
+  .shared-list-pane,
+  .shared-reader-pane {
+    overflow-y: visible;
+  }
+
+  .shared-source-switch {
+    margin-bottom: var(--space-4);
+  }
+
+  .shared-status-bar {
+    margin-bottom: var(--space-5);
+  }
+
+  .shared-reader-pane {
+    display: none;
+  }
+
+  .shared-view--reading .shared-list-pane {
+    display: none;
+  }
+
+  .shared-view--reading .shared-reader-pane {
+    display: block;
+  }
+
+  .shared-back-btn {
+    display: inline-flex;
+  }
+}

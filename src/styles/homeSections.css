@@ -1,0 +1,122 @@
+/* HomeArticleSections: "あなたの記事" + "グローバルニュース" の縦グリッド
+   セクション2つ。旧FeedView.tsxの横スクロールレール(.feed-home-rail /
+   .feed-home-rail-item)は廃止し、記事本体をホームのメインコンテンツにする
+   縦グリッド(.home-articles-grid)に置き換えた。レイアウトの配置(grid-column
+   / grid-row / position)はfeed.css側が持つので、ここでは持たない。 */
+
+.feed-home-section {
+  margin-bottom: var(--space-6);
+}
+
+.feed-home-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.feed-home-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+/* Deliberately understated — an empty "your articles" section is the normal
+   first-run state, not an error. */
+.feed-home-empty {
+  margin: 0;
+  padding: var(--space-4);
+  font-size: 0.82rem;
+  color: var(--text-subtle);
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-m);
+}
+
+/* --- Global-room section (P2Pで受信済みのグローバル記事、ホームが寂しくならないよう表示) --- */
+
+.feed-global-section {
+  margin-bottom: var(--space-6);
+}
+
+/* Vertical responsive grid, the main content of the article-first home tab. */
+.home-articles-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-4);
+}
+
+/* Centered "show all / show fewer" toggle row below the "your articles" grid. */
+.home-show-toggle {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--space-3);
+}
+
+/* --- Motion: entrance animations --------------------------------------- */
+
+.feed-home-header {
+  animation: home-section-in 0.2s var(--ease);
+}
+
+.home-articles-grid > * {
+  animation: home-card-in 0.25s var(--ease) backwards;
+}
+
+.home-articles-grid > *:nth-child(1) {
+  animation-delay: 0ms;
+}
+.home-articles-grid > *:nth-child(2) {
+  animation-delay: 25ms;
+}
+.home-articles-grid > *:nth-child(3) {
+  animation-delay: 50ms;
+}
+.home-articles-grid > *:nth-child(4) {
+  animation-delay: 75ms;
+}
+.home-articles-grid > *:nth-child(5) {
+  animation-delay: 100ms;
+}
+.home-articles-grid > *:nth-child(6) {
+  animation-delay: 125ms;
+}
+.home-articles-grid > *:nth-child(7) {
+  animation-delay: 150ms;
+}
+.home-articles-grid > *:nth-child(n + 8) {
+  animation-delay: 175ms;
+}
+
+@keyframes home-section-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes home-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .feed-home-header,
+  .home-articles-grid > * {
+    animation: none;
+  }
+}

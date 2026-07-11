@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- Matches the in-app brand accent (the "primary" CSS token): a crimson
+       gradient rounded square with Lucide's newspaper glyph in white. -->
+  <defs>
+    <linearGradient id="tcnews-mark" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#c2413b"/>
+      <stop offset="1" stop-color="#8f2b26"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="15" fill="url(#tcnews-mark)"/>
+  <g transform="translate(14 14) scale(1.5)" fill="none" stroke="#ffffff"
+     stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/>
+    <path d="M18 14h-8"/>
+    <path d="M15 18h-5"/>
+    <path d="M10 6h8v4h-8V6Z"/>
+  </g>
+</svg>
