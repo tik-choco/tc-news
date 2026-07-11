@@ -181,7 +181,12 @@ function FeedItemCard(props: {
           }}
           onClick={(e) => {
             e.stopPropagation();
-            e.preventDefault();
+            // preventDefaultは呼ばない: ブラウザはclick配送の完了後に
+            // キャンセル済みチェックボックスのDOM状態を巻き戻すが、Preactの
+            // 再レンダー(マイクロタスク)はその巻き戻しより先に走るため、
+            // 書き込んだchecked=trueが巻き戻しに潰されて「選択されたのに
+            // チェックが出ない」状態になる。ネイティブのトグル結果と
+            // ここでの状態更新は常に同じ値なので、素通しで整合する。
             onCheckboxInteract(e.shiftKey);
           }}
           aria-label={selectAriaLabel}

@@ -45,6 +45,8 @@ export const ko: Messages = {
     emptyDescription: "왼쪽 양식에서 피드를 추가하면 새 헤드라인이 여기에 표시됩니다.",
     untitledItem: "(제목 없음)",
     selectedCount: "{count}건 선택됨",
+    selectionTrayAria: "선택한 항목 목록",
+    selectionRemoveAria: '"{title}" 선택 해제',
     instructionPlaceholder: '추가 지시사항(선택 사항): 예) "초보자도 이해하기 쉬운 표현으로"',
     generating: "생성 중...",
     generateArticle: "기사 생성",

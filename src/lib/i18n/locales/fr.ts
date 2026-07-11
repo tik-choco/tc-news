@@ -45,6 +45,8 @@ export const fr: Messages = {
     emptyDescription: "Ajoutez un flux via le formulaire à gauche, et les nouveaux titres apparaîtront ici.",
     untitledItem: "(Sans titre)",
     selectedCount: "{count} sélectionné(s)",
+    selectionTrayAria: "Éléments sélectionnés",
+    selectionRemoveAria: "Retirer « {title} » de la sélection",
     instructionPlaceholder:
       "Instructions supplémentaires (facultatif) : par ex. « Utilise un langage simple pour débutants »",
     generating: "Génération en cours...",

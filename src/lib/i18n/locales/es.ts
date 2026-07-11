@@ -46,6 +46,8 @@ export const es: Messages = {
       "Añade una fuente con el formulario de la izquierda y los nuevos titulares aparecerán aquí.",
     untitledItem: "(Sin título)",
     selectedCount: "{count} seleccionados",
+    selectionTrayAria: "Elementos seleccionados",
+    selectionRemoveAria: "Quitar «{title}» de la selección",
     instructionPlaceholder:
       'Instrucciones adicionales (opcional): p. ej. "Usa un lenguaje sencillo para principiantes"',
     generating: "Generando...",
