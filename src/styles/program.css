@@ -393,6 +393,71 @@
   border-left-color: var(--primary);
 }
 
+/* --- Motion: entrance animation ------------------------------------------
+   タブ切り替え時の唐突な出現を避ける最小限の演出。ホーム
+   (homeSections.css)のトーンに合わせ、opacityのみのフェード + 番組行の
+   軽いstagger(6px/25ms上限)。 */
+
+.program-view {
+  animation: program-view-in 0.2s var(--ease);
+}
+
+.program-list > li {
+  animation: program-row-in 0.25s var(--ease) backwards;
+}
+
+.program-list > li:nth-child(1) {
+  animation-delay: 0ms;
+}
+.program-list > li:nth-child(2) {
+  animation-delay: 25ms;
+}
+.program-list > li:nth-child(3) {
+  animation-delay: 50ms;
+}
+.program-list > li:nth-child(4) {
+  animation-delay: 75ms;
+}
+.program-list > li:nth-child(5) {
+  animation-delay: 100ms;
+}
+.program-list > li:nth-child(6) {
+  animation-delay: 125ms;
+}
+.program-list > li:nth-child(7) {
+  animation-delay: 150ms;
+}
+.program-list > li:nth-child(n + 8) {
+  animation-delay: 175ms;
+}
+
+@keyframes program-view-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes program-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .program-view,
+  .program-list > li {
+    animation: none;
+  }
+}
+
 @media (max-width: 768px) {
   /* Single column: back to normal page flow — .app-main is the one scroll
      container again, so the per-pane scrollbars are switched off. */
