@@ -214,6 +214,9 @@
 .program-row-meta {
   display: flex;
   align-items: center;
+  /* wrap必須: nowrapのままだと幅が狭まった際に相対時刻テキストが
+     1文字ずつ縦折れする(FeedInboxで見つかったのと同じ崩れ方)。 */
+  flex-wrap: wrap;
   gap: var(--space-1);
   font-size: 0.74rem;
   color: var(--text-subtle);

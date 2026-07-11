@@ -83,6 +83,8 @@ export const ko: Messages = {
     inboxExpandAria: "새 항목 펼치기",
     inboxSelectAll: "전체 선택",
     inboxClearSelection: "전체 해제",
+    inboxSelectMode: "선택",
+    inboxSelectModeExit: "완료",
     // 다른 소스에서 온 거의 동일한 항목들을 하나로 묶었을 때 카드에 표시되는 "+N" 배지
     inboxDupAria: "다른 출처의 비슷한 항목이 {count}건 더 있습니다",
     filterAll: "전체",

@@ -86,6 +86,8 @@ export const es: Messages = {
     inboxExpandAria: "Expandir elementos nuevos",
     inboxSelectAll: "Seleccionar todo",
     inboxClearSelection: "Vaciar selección",
+    inboxSelectMode: "Seleccionar",
+    inboxSelectModeExit: "Listo",
     // Insignia "+N" en una tarjeta cuando se agrupan noticias casi idénticas de otras fuentes
     inboxDupAria: "{count} elementos similares más de otras fuentes",
     filterAll: "Todo",

@@ -82,6 +82,8 @@ export const zh: Messages = {
     inboxExpandAria: "展开新条目",
     inboxSelectAll: "全选",
     inboxClearSelection: "清除选择",
+    inboxSelectMode: "选择",
+    inboxSelectModeExit: "完成",
     // 当来自其他来源的近似重复内容被合并时，卡片上显示的"+N"徽标
     inboxDupAria: "还有{count}条来自其他来源的相似内容",
     filterAll: "全部",

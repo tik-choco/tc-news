@@ -140,6 +140,12 @@
   box-shadow: 0 0 0 2px var(--primary-soft), var(--shadow-2);
 }
 
+/* 選択モード中はshift+クリックで範囲選択する際にテキストが意図せず
+   選択(ハイライト)されるのを防ぐ。 */
+.feed-items-grid--selecting .feed-item-card {
+  user-select: none;
+}
+
 /* Card entrance: fades/slides in on mount, with a light stagger driven by
    --card-index (capped so long grids don't feel slow to settle). Disabled
    entirely under prefers-reduced-motion below. */
@@ -181,6 +187,9 @@
   padding: var(--space-4);
 }
 
+/* 選択モード中(selectionActive)だけDOMにマウントされる。opacityではなく
+   条件付きレンダーで隠すため、非選択時はレイアウト上のスペースも残らない。
+   マウント時だけ軽くフェードインさせる。 */
 .feed-item-card input[type="checkbox"] {
   width: 16px;
   height: 16px;
@@ -188,29 +197,14 @@
   flex-shrink: 0;
   accent-color: var(--primary);
   cursor: pointer;
-  /* デフォルトは非表示(レイアウトは維持)。ホバー/フォーカス/選択中/
-     選択モード中だけ現れる — 「かっこ悪い」フィードバックへの対応。 */
-  opacity: 0;
-  transition: opacity var(--dur-fast) var(--ease);
+  animation: feed-item-checkbox-in 0.15s var(--ease) both;
 }
 
-.feed-item-card:hover input[type="checkbox"],
-.feed-item-card:focus-within input[type="checkbox"],
-.feed-item-card--selected input[type="checkbox"],
-.feed-items-grid--selecting .feed-item-card input[type="checkbox"] {
-  opacity: 1;
-}
-
-/* タッチ端末には:hoverが実質存在しないので、選択モード中/選択済み以外は
-   常に隠す(誤って:hoverが一致してしまうケースを明示的に打ち消す)。 */
-@media (hover: none) {
-  .feed-item-card:hover input[type="checkbox"],
-  .feed-item-card:focus-within input[type="checkbox"] {
+@keyframes feed-item-checkbox-in {
+  from {
     opacity: 0;
   }
-
-  .feed-item-card--selected input[type="checkbox"],
-  .feed-items-grid--selecting .feed-item-card input[type="checkbox"] {
+  to {
     opacity: 1;
   }
 }
@@ -229,17 +223,27 @@
   color: var(--text);
 }
 
-.feed-item-title:hover {
-  color: var(--primary);
-  text-decoration: underline;
-}
-
 .feed-item-meta {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: var(--space-1);
   font-size: 0.74rem;
   color: var(--text-subtle);
+}
+
+/* フィード名は長くなりがちなので省略記法で1行に収める(縦折れさせない)。
+   時刻表示は短いが、折り返し発生時に1文字ずつ縦に割れるのを防ぐため
+   nowrapにしておく。 */
+.feed-item-source {
+  overflow: hidden;
+  max-width: 12em;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.feed-item-time {
+  white-space: nowrap;
 }
 
 .feed-item-dot {
@@ -259,6 +263,7 @@
   background: var(--surface-2);
   border-radius: var(--radius-pill);
   cursor: help;
+  white-space: nowrap;
   transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
 
@@ -279,16 +284,15 @@
   }
 }
 
-/* すべてのアニメーション演出はここで一括無効化。checkbox opacity自体は
-   状態表現(選択/選択モード)なので消さず、遷移時間だけゼロにする。 */
+/* すべてのアニメーション演出はここで一括無効化。 */
 @media (prefers-reduced-motion: reduce) {
   .feed-item-card,
-  .feed-inbox-body {
+  .feed-inbox-body,
+  .feed-item-card input[type="checkbox"] {
     animation: none;
   }
 
   .feed-item-card,
-  .feed-item-card input[type="checkbox"],
   .feed-item-dup,
   .feed-inbox .btn.btn-ghost.btn-small {
     transition: none;
