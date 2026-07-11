@@ -88,6 +88,11 @@ export const es: Messages = {
     inboxClearSelection: "Vaciar selección",
     // Insignia "+N" en una tarjeta cuando se agrupan noticias casi idénticas de otras fuentes
     inboxDupAria: "{count} elementos similares más de otras fuentes",
+    filterAll: "Todo",
+    filterArticles: "Artículos",
+    filterAudio: "Audio",
+    programsHeading: "Programas",
+    ownAuthorLabel: "Tú",
   },
 
   articles: {
@@ -339,7 +344,7 @@ export const es: Messages = {
   },
 
   program: {
-    tabLabel: "Programas",
+    tabLabel: "Estudio",
     title: "Programas de noticias",
     createHeading: "Crear un programa",
     createHint: "La IA redacta un guion de narración estilo radio a partir de los artículos que selecciones.",
@@ -381,5 +386,11 @@ export const es: Messages = {
     downloadFailed: "Error al descargar: {detail}",
     popularHeading: "Programas populares de hoy",
     popularEmpty: "Todavía no hay reacciones a programas hoy.",
+  },
+
+  player: {
+    pause: "Pausar",
+    resume: "Reanudar",
+    stop: "Detener",
   },
 };

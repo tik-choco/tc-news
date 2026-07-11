@@ -87,6 +87,11 @@ export const fr: Messages = {
     inboxClearSelection: "Effacer la sélection",
     // Badge « +N » sur une carte quand des actualités quasi identiques d'autres sources y sont regroupées
     inboxDupAria: "{count} éléments similaires supplémentaires d'autres sources",
+    filterAll: "Tout",
+    filterArticles: "Articles",
+    filterAudio: "Audio",
+    programsHeading: "Programmes",
+    ownAuthorLabel: "Vous",
   },
 
   articles: {
@@ -339,7 +344,7 @@ export const fr: Messages = {
   },
 
   program: {
-    tabLabel: "Programmes",
+    tabLabel: "Studio",
     title: "Programmes d'actualités",
     createHeading: "Créer un programme",
     createHint: "L'IA rédige un script de narration façon radio à partir des articles que vous sélectionnez.",
@@ -381,5 +386,11 @@ export const fr: Messages = {
     downloadFailed: "Échec du téléchargement : {detail}",
     popularHeading: "Programmes populaires du jour",
     popularEmpty: "Aucune réaction sur les programmes aujourd'hui.",
+  },
+
+  player: {
+    pause: "Pause",
+    resume: "Reprendre",
+    stop: "Arrêter",
   },
 };
