@@ -153,6 +153,12 @@ export function FeedView(props: {
 
   const openArticleRecord = openArticleId ? articles.find((a) => a.id === openArticleId) ?? null : null;
 
+  // GenerateBarのチップ表示用: 選択中アイテムをitems内の表示順で並べる。
+  const selectedItems = useMemo(
+    () => items.filter((item) => selectedIds.has(item.id)),
+    [items, selectedIds],
+  );
+
   // Deep link: if a "#/feed/<id>" hash (or the legacy "#/articles/<id>" alias
   // resolved by hashRoute.ts) points at an id we hold, open it — mirrors the
   // former ArticlesView's deep-link effect. Only acts when the target differs
@@ -307,6 +313,40 @@ export function FeedView(props: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items, settings.autoGenerate]);
 
+  // 定期リフレッシュでアイテムが落ちた後、選択集合に幽霊idが残ると件数表示と
+  // 実際の生成対象がズレるため、items から消えたidは選択からも取り除く。
+  useEffect(() => {
+    setSelectedIds((prev) => {
+      let changed = false;
+      const next = new Set<string>();
+      for (const id of prev) {
+        if (items.some((item) => item.id === id)) {
+          next.add(id);
+        } else {
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [items]);
+
+  // Escで選択をすべて解除。ただしモーダルが開いている間はモーダル側がEscで
+  // 閉じる責任を持つのでここでは何もせず、入力欄内でのEscも選択解除に
+  // 巻き込まない(GenerateBarの指示入力などでの誤操作防止)。
+  useEffect(() => {
+    if (selectedIds.size === 0) return;
+    if (openItem !== null || openArticleId !== null) return;
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      const target = event.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target?.isContentEditable) return;
+      setSelectedIds(new Set());
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectedIds.size, openItem, openArticleId]);
+
   function toggleSelect(id: string) {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -388,7 +428,7 @@ export function FeedView(props: {
       </section>
 
       <GenerateBar
-        selectedCount={selectedIds.size}
+        selectedItems={selectedItems}
         instruction={instruction}
         onInstructionChange={setInstruction}
         disabled={isGenerating}
@@ -397,6 +437,8 @@ export function FeedView(props: {
         error={genError}
         onGenerate={handleGenerateClick}
         onOrchestrate={handleOrchestrateClick}
+        onRemoveSelected={(id) => selectMany([id], false)}
+        onClearSelection={() => setSelectedIds(new Set())}
       />
 
       {openItem ? (

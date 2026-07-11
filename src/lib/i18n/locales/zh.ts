@@ -45,6 +45,8 @@ export const zh: Messages = {
     emptyDescription: "在左侧表单添加订阅源后，新的标题会显示在这里。",
     untitledItem: "(无标题)",
     selectedCount: "已选择{count}项",
+    selectionTrayAria: "已选条目列表",
+    selectionRemoveAria: "将“{title}”移出选择",
     instructionPlaceholder: '附加说明(可选)：例如"请用适合初学者的语言"',
     generating: "生成中...",
     generateArticle: "生成文章",

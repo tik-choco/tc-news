@@ -24,6 +24,9 @@ const ja = {
   emptyDescription: "左のフォームからフィードを追加すると、新着の見出しがここに並びます。",
   untitledItem: "(無題)",
   selectedCount: "{count}件選択中",
+  // 生成バー内の選択トレイ(選択済みアイテムのチップ列)
+  selectionTrayAria: "選択中のアイテム一覧",
+  selectionRemoveAria: "「{title}」を選択から外す",
   instructionPlaceholder: "追加の指示(任意): 例「初心者にもやさしい言葉で」",
   generating: "生成中...",
   generateArticle: "記事を生成",
@@ -84,6 +87,8 @@ const en: typeof ja = {
   emptyDescription: "Add a feed using the form on the left, and new headlines will appear here.",
   untitledItem: "(Untitled)",
   selectedCount: "{count} selected",
+  selectionTrayAria: "Selected items",
+  selectionRemoveAria: 'Remove "{title}" from selection',
   instructionPlaceholder: 'Additional instructions (optional): e.g. "Use beginner-friendly language"',
   generating: "Generating...",
   generateArticle: "Generate Article",

@@ -1,12 +1,14 @@
-// 選択済みアイテムから記事を生成するスティッキーバー。選択0件かつ進行中でも
-// エラーでもなければ何も表示しない(=描画すべきことがある時だけ出す)。
+// 選択済みアイテムから記事を生成するスティッキーバー。選択中アイテムのチップ列
+// (トレイ)を上部に、件数表示・指示入力・生成ボタン列を下部に持つ。選択0件かつ
+// 進行中でもエラーでもなければ何も表示しない(=描画すべきことがある時だけ出す)。
 import type { JSX } from "preact";
-import { Loader2, Network, Sparkles } from "lucide-preact";
+import { Loader2, Network, Sparkles, X } from "lucide-preact";
 import { useT } from "../lib/i18n";
 import "../styles/generateBar.css";
 
 export function GenerateBar(props: {
-  selectedCount: number;
+  /** 選択中のアイテム(表示順)。トレイのチップ列と件数表示の元。 */
+  selectedItems: { id: string; title: string }[];
   instruction: string;
   onInstructionChange: (value: string) => void;
   /** 生成/編集部ジョブが実行中または待機中(ボタン・入力を無効化)。 */
@@ -18,15 +20,57 @@ export function GenerateBar(props: {
   error: string | null;
   onGenerate: () => void;
   onOrchestrate: () => void;
+  /** トレイのチップの×: 該当アイテムを選択から外す。 */
+  onRemoveSelected: (id: string) => void;
+  /** 「選択解除」ボタン: 選択をすべて解除する。 */
+  onClearSelection: () => void;
 }): JSX.Element | null {
-  const { selectedCount, instruction, onInstructionChange, disabled, showProgress, progressText, error, onGenerate, onOrchestrate } =
-    props;
+  const {
+    selectedItems,
+    instruction,
+    onInstructionChange,
+    disabled,
+    showProgress,
+    progressText,
+    error,
+    onGenerate,
+    onOrchestrate,
+    onRemoveSelected,
+    onClearSelection,
+  } = props;
   const t = useT();
+  const selectedCount = selectedItems.length;
 
   if (selectedCount === 0 && !showProgress && !error) return null;
 
   return (
     <div class="feed-generate-bar">
+      {selectedCount > 0 ? (
+        <div class="feed-generate-tray" role="list" aria-label={t("feed.selectionTrayAria")}>
+          {selectedItems.map((item) => {
+            const title = item.title || t("feed.untitledItem");
+            return (
+              <span class="feed-generate-chip" role="listitem" key={item.id}>
+                <span class="feed-generate-chip-title" title={title}>
+                  {title}
+                </span>
+                <button
+                  type="button"
+                  class="feed-generate-chip-remove"
+                  onClick={() => onRemoveSelected(item.id)}
+                  disabled={disabled}
+                  aria-label={t("feed.selectionRemoveAria", { title })}
+                >
+                  <X size={12} />
+                </button>
+              </span>
+            );
+          })}
+          <button type="button" class="btn btn-ghost feed-generate-clear" onClick={onClearSelection} disabled={disabled}>
+            {t("feed.inboxClearSelection")}
+          </button>
+        </div>
+      ) : null}
       <div class="feed-generate-row">
         <span class="feed-generate-count">{t("feed.selectedCount", { count: selectedCount })}</span>
         <input
