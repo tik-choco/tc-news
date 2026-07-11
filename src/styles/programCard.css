@@ -1,0 +1,146 @@
+/* ProgramCard (components/ProgramCard.tsx) — home-feed radio program grid,
+   rendered by views/FeedView.tsx between HomeArticleSections and FeedInbox
+   (or standalone under the "音声" filter). Mirrors ArticleCard's card look
+   (components.css's .article-card family) but owns its rules here since a
+   program card additionally needs a prominent play/pause control outside
+   the clickable body — the two can't share one <button>. Tokens only, see
+   index.css. */
+
+.feed-programs-section {
+  margin-bottom: var(--space-6);
+}
+
+.feed-programs-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.feed-programs-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.program-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-4);
+}
+
+.program-card {
+  display: flex;
+  align-items: stretch;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-l);
+  box-shadow: var(--shadow-1);
+  transition: box-shadow var(--dur) var(--ease), transform var(--dur) var(--ease);
+}
+
+.program-card:hover {
+  box-shadow: var(--shadow-2);
+  transform: translateY(-2px);
+}
+
+.program-card-main {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: flex-start;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-4);
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.program-card-thumb {
+  flex: 0 0 auto;
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: var(--radius-m);
+  background: var(--surface-2);
+}
+
+.program-card-thumb--fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.program-card-text {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.program-card-title {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--text);
+}
+
+.program-card-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  font-size: 0.76rem;
+  color: var(--text-subtle);
+}
+
+.program-card-author {
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.program-card-dot {
+  opacity: 0.7;
+}
+
+.program-card-badge {
+  margin-left: var(--space-1);
+}
+
+/* Deliberately its own <button>, sibling to .program-card-main rather than
+   nested inside it — a <button> can't contain another <button> (same reason
+   ArticleCard keeps its actions slot outside .article-card-main). */
+.program-card-play {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  padding: 0;
+  color: var(--on-primary);
+  background: var(--primary);
+  border: none;
+  border-left: 1px solid var(--primary-border);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+
+.program-card-play:hover {
+  background: var(--primary-hover);
+}

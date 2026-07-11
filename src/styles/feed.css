@@ -90,3 +90,38 @@
     position: static;
   }
 }
+
+/* --- Content-type filter chips (すべて/記事/音声), top of .feed-main -------
+   Same chip idiom as .chip/.badge (components.css) but its own active state,
+   closer to a segmented control than a free-form tag. */
+
+.feed-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.feed-filter-chip {
+  padding: var(--space-1) var(--space-4);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+
+.feed-filter-chip:hover:not(.feed-filter-chip--active) {
+  background: var(--surface-3);
+}
+
+.feed-filter-chip--active {
+  color: var(--on-primary);
+  background: var(--primary);
+  border-color: var(--primary);
+}
