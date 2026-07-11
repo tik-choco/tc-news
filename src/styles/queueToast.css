@@ -129,10 +129,14 @@
 }
 
 @media (max-width: 640px) {
+  /* Stays right-anchored (not full-width) at this breakpoint too — MiniPlayer
+     (miniPlayer.css) occupies the opposite bottom-left corner at the same
+     width, and both fixed widgets can be visible at once. */
   .tq-toast {
     right: var(--space-3);
     bottom: var(--space-3);
-    left: var(--space-3);
-    width: auto;
+    left: auto;
+    /* 50vwベース: miniPlayerと合わせても100vw内に収まり中央に隙間が残る。 */
+    width: min(220px, calc(50vw - var(--space-3) * 1.5));
   }
 }

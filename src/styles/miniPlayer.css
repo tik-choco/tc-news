@@ -1,0 +1,110 @@
+/* MiniPlayer (components/MiniPlayer.tsx) — app-global persistent playback
+   bar. Fixed bottom-LEFT, deliberately the opposite corner from
+   JobQueueToast's bottom-right (queueToast.css): both are fixed-position
+   widgets that can be visible at the same time (a program playing while a
+   translation/generation job runs), and anchoring them to opposite corners
+   avoids needing any cross-component offset math. Same z-index (90, below
+   FeedItemModal's overlay) and card look as JobQueueToast. Tokens only, from
+   index.css — both themes covered automatically. */
+
+.mini-player {
+  position: fixed;
+  left: var(--space-4);
+  bottom: var(--space-4);
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: min(340px, calc(100vw - var(--space-4) * 2));
+  padding: var(--space-3);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  box-shadow: var(--shadow-2);
+}
+
+.mini-player-thumb {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  object-fit: cover;
+  border-radius: var(--radius-s);
+  background: var(--surface-2);
+}
+
+.mini-player-thumb--fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.mini-player-text {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mini-player-title {
+  overflow: hidden;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mini-player-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  overflow: hidden;
+  font-size: 0.72rem;
+  color: var(--text-subtle);
+}
+
+.mini-player-author {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mini-player-dot {
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+.mini-player-error {
+  overflow: hidden;
+  font-size: 0.72rem;
+  color: var(--danger-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mini-player-controls {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+@media (max-width: 640px) {
+  /* Narrower rather than full-width, so it stays in its own bottom-left
+     corner instead of spanning under JobQueueToast's bottom-right corner
+     (queueToast.css narrows the same way at this breakpoint). */
+  .mini-player {
+    left: var(--space-3);
+    bottom: var(--space-3);
+    /* 50vwベース: queueToastと合わせても100vw内に収まり中央に隙間が残る
+       (55vwだと~433px未満の幅で両者が重なっていた)。 */
+    width: min(220px, calc(50vw - var(--space-3) * 1.5));
+  }
+
+  .mini-player-meta {
+    display: none; /* progress text is the first thing to go at this width */
+  }
+}
