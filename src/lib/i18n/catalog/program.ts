@@ -5,7 +5,10 @@
 // `typeof ja` so TypeScript flags any key present in one but missing in the
 // other. Additional languages live in ../locales/<lang>.ts.
 const ja = {
-  tabLabel: "番組",
+  // タブ名は「スタジオ」— 再生自体はグローバルプレイヤー(lib/playerStore)へ
+  // 移り、ここは番組の作成・共有・音声レンダリング・ダウンロードに専念する
+  // 制作ワークスペースになった(feed.tsのフィルタ「音声」から再生できる)。
+  tabLabel: "スタジオ",
   title: "ニュース番組",
   createHeading: "番組を作成",
   createHint: "選択した記事から、ラジオ風の読み上げ台本をAIが生成します。",
@@ -47,7 +50,7 @@ const ja = {
 };
 
 const en: typeof ja = {
-  tabLabel: "Program",
+  tabLabel: "Studio",
   title: "News Programs",
   createHeading: "Create a program",
   createHint: "AI writes a radio-style narration script from the articles you select.",

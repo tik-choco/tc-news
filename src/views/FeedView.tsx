@@ -16,13 +16,15 @@
 // アイテム群を複数記事に振り分けて並列生成する。
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { JSX } from "preact";
-import type { AppSettings, FeedItem, NewsArticle } from "../types";
+import { Radio } from "lucide-preact";
+import type { AppSettings, FeedItem, NewsArticle, RadioProgram } from "../types";
 import { useFeeds } from "../hooks/useFeeds";
 import { generateArticle } from "../lib/generate";
 import { runOrchestratedGeneration } from "../lib/orchestrate";
 import { loadProviderSettings } from "../lib/llmSettings";
 import { isMuted, loadMutedDids } from "../lib/muteStore";
 import { groupNearDuplicateItems } from "../lib/feedDedupe";
+import { loadPrograms } from "../lib/programStore";
 import { enqueueJob, findPendingJob, isCancelError } from "../lib/jobQueue";
 import { useJobQueue } from "../hooks/useJobQueue";
 import { ArticleReaderModal } from "../components/ArticleReaderModal";
@@ -30,11 +32,28 @@ import { FeedItemModal } from "../components/FeedItemModal";
 import { FeedManageSidebar } from "../components/FeedManageSidebar";
 import { FeedInbox } from "../components/FeedInbox";
 import { HomeArticleSections } from "../components/HomeArticleSections";
+import { ProgramCard } from "../components/ProgramCard";
+import { EmptyState } from "../components/EmptyState";
 import { GenerateBar } from "../components/GenerateBar";
 import { LOCALE_LABELS, useLocale, useT, type Locale } from "../lib/i18n";
 import type { ArticleTranslation } from "../lib/translationStore";
 import "../styles/components.css";
 import "../styles/feed.css";
+import "../styles/programCard.css";
+
+type ProgramFilter = "all" | "articles" | "audio";
+
+// First occurrence wins — mirrors app.tsx's dedupeById (own programs go
+// first in the input array, so a program the user made AND received back
+// over P2P keeps showing as their own copy).
+function dedupeById<T extends { id: string }>(items: T[]): T[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    if (seen.has(item.id)) return false;
+    seen.add(item.id);
+    return true;
+  });
+}
 
 /** 新着がこの件数以上たまったら autoGenerate 設定時に自動生成する。 */
 const AUTO_GENERATE_THRESHOLD = 3;
@@ -74,6 +93,10 @@ export function FeedView(props: {
   globalConnected: boolean;
   /** idありなら「みんな」タブのそのグローバル記事のリーダーへ、nullならグローバル一覧へ移動。 */
   onOpenGlobal: (id: string | null) => void;
+  /** room+globalの受信済み番組(App層で既にdedup済み)。ホームの音声セクション用。 */
+  sharedPrograms: RadioProgram[];
+  /** 番組カードからスタジオタブへ、そのidの番組を選択した状態で遷移する。 */
+  onOpenProgram: (id: string) => void;
   onArticleGenerated: (article: NewsArticle) => void;
   onShareToRoom: (article: NewsArticle) => void | Promise<void>;
   onShareToChat: (article: NewsArticle) => void | Promise<void>;
@@ -94,6 +117,8 @@ export function FeedView(props: {
     globalArticles,
     globalConnected,
     onOpenGlobal,
+    sharedPrograms,
+    onOpenProgram,
     onArticleGenerated,
     onShareToRoom,
     onShareToChat,
@@ -118,6 +143,25 @@ export function FeedView(props: {
   const [openItem, setOpenItem] = useState<FeedItem | null>(null);
   // Reader modal for "your articles" (旧ArticlesViewの activeId 相当)。
   const [openArticleId, setOpenArticleId] = useState<string | null>(null);
+
+  // 番組(自分の分): このビューはタブ切り替えで毎回アンマウント/再マウント
+  // されるので(ProgramViewと同様)、state初期化子でのloadPrograms()呼び出し
+  // だけで再訪時に最新化される — jobQueue購読のような仕組みは不要。
+  const [ownPrograms] = useState<RadioProgram[]>(() => loadPrograms());
+  const ownProgramIds = useMemo(() => new Set(ownPrograms.map((p) => p.id)), [ownPrograms]);
+  // 自分の番組が先(id重複時に勝つ)、次に受信済み番組。新しい順に並べ替える。
+  const allPrograms = useMemo(
+    () => dedupeById([...ownPrograms, ...sharedPrograms]).sort((a, b) => b.createdAt - a.createdAt),
+    [ownPrograms, sharedPrograms],
+  );
+
+  // ホーム上部のコンテンツ種別フィルタ(すべて/記事/音声)。タブ切り替えで
+  // アンマウントされるビューなので、選択を永続化する必要はない。
+  const [programFilter, setProgramFilter] = useState<ProgramFilter>("all");
+  const showArticleSections = programFilter !== "audio";
+  // 「すべて」表示中は番組が1件も無ければセクションごと隠す。「音声」表示中は
+  // 0件でも(フィルタ自体が音声を選んでいるので)空状態を出す。
+  const showProgramsSection = programFilter === "audio" || (programFilter === "all" && allPrograms.length > 0);
 
   // フィード管理サイドバーの折りたたみ。保存値があればそれを、なければ
   // 「フィードがすでにあるなら畳む」を初期値にする(初回セットアップ中の
@@ -407,24 +451,72 @@ export function FeedView(props: {
       />
 
       <section class="feed-main">
-        <HomeArticleSections
-          articles={articles}
-          onOpenArticle={openArticle}
-          briefingDisabled={isGenerating || items.length === 0}
-          onBriefingClick={handleBriefingClick}
-          globalArticles={visibleGlobalArticles}
-          globalConnected={globalConnected}
-          onOpenGlobal={onOpenGlobal}
-        />
+        <div class="feed-filter-row" role="group">
+          {(
+            [
+              ["all", t("feed.filterAll")],
+              ["articles", t("feed.filterArticles")],
+              ["audio", t("feed.filterAudio")],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              class={`feed-filter-chip${programFilter === value ? " feed-filter-chip--active" : ""}`}
+              aria-pressed={programFilter === value}
+              onClick={() => setProgramFilter(value)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
 
-        <FeedInbox
-          items={items}
-          hasFeeds={feeds.length > 0}
-          selectedIds={selectedIds}
-          onToggleSelect={toggleSelect}
-          onSelectMany={selectMany}
-          onOpenItem={setOpenItem}
-        />
+        {showArticleSections ? (
+          <HomeArticleSections
+            articles={articles}
+            onOpenArticle={openArticle}
+            briefingDisabled={isGenerating || items.length === 0}
+            onBriefingClick={handleBriefingClick}
+            globalArticles={visibleGlobalArticles}
+            globalConnected={globalConnected}
+            onOpenGlobal={onOpenGlobal}
+          />
+        ) : null}
+
+        {showProgramsSection ? (
+          <section class="feed-programs-section">
+            <div class="feed-programs-header">
+              <h2 class="feed-programs-heading">
+                <Radio size={16} /> {t("feed.programsHeading")}
+              </h2>
+            </div>
+            {allPrograms.length === 0 ? (
+              <EmptyState icon={Radio} title={t("program.emptyTitle")} description={t("program.emptyDescription")} />
+            ) : (
+              <div class="program-cards-grid">
+                {allPrograms.map((program) => (
+                  <ProgramCard
+                    key={program.id}
+                    program={program}
+                    isOwn={ownProgramIds.has(program.id)}
+                    onOpenProgram={onOpenProgram}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+        ) : null}
+
+        {showArticleSections ? (
+          <FeedInbox
+            items={items}
+            hasFeeds={feeds.length > 0}
+            selectedIds={selectedIds}
+            onToggleSelect={toggleSelect}
+            onSelectMany={selectMany}
+            onOpenItem={setOpenItem}
+          />
+        ) : null}
       </section>
 
       <GenerateBar

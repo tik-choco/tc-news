@@ -67,6 +67,16 @@ const ja = {
   inboxClearSelection: "選択解除",
   // ほぼ同内容のアイテム(複数ソースが同じ話題を配信)をまとめた際のバッジ
   inboxDupAria: "似た内容のアイテムが他に{count}件あります",
+  // Home tab: content-type filter chips above the main column (unified feed —
+  // 番組もホームで再生できるようになったので、記事だけ/音声だけに絞れる)
+  filterAll: "すべて",
+  filterArticles: "記事",
+  filterAudio: "音声",
+  // Home tab: programs section between "あなたの記事" and the inbox
+  programsHeading: "番組",
+  // 番組カードの著者表示: 共有前の自分の番組にはauthorNameがまだ無いため、
+  // 匿名ではなく「自分」であることを示すためのフォールバック
+  ownAuthorLabel: "自分",
 };
 
 const en: typeof ja = {
@@ -121,6 +131,11 @@ const en: typeof ja = {
   inboxSelectAll: "Select all",
   inboxClearSelection: "Clear selection",
   inboxDupAria: "{count} more similar items from other sources",
+  filterAll: "All",
+  filterArticles: "Articles",
+  filterAudio: "Audio",
+  programsHeading: "Programs",
+  ownAuthorLabel: "You",
 };
 
 export const feed = { ja, en };

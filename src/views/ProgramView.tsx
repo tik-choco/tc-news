@@ -1,10 +1,17 @@
-// ProgramView: pick your own articles, generate a radio-style narration
-// script via LLM, and play it back — either via the browser's speech
-// synthesis or, when configured, an OpenAI-compatible TTS endpoint.
+// ProgramView ("スタジオ" / studio tab): pick your own articles, generate a
+// radio-style narration script via LLM, render/download its audio, and
+// share it to the P2P wire. Playback itself is no longer owned here — it
+// runs through the app-global player (lib/playerStore) via usePlayer(), so
+// starting a program from this view (or from a feed ProgramCard, or from
+// the mini player's controls) is all the same playback, and it survives
+// switching away from this tab instead of stopping on unmount. This view
+// just reflects the store's state when the *selected* program happens to be
+// the one playing; selecting a different program in the list no longer
+// stops whatever's actually playing.
 // Two-pane layout (list on the left: create + saved programs, plus a
-// "everyone's programs" section for P2P-received ones; player on the
-// right), mirroring ArticlesView's structural conventions. Own programs can
-// be shared to the P2P wire (see App's onShareProgram) and any program —
+// "everyone's programs" section for P2P-received ones; player/script pane on
+// the right), mirroring ArticlesView's structural conventions. Own programs
+// can be shared to the P2P wire (see App's onShareProgram) and any program —
 // own or received — can collect emoji reactions via ReactionBar.
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { JSX } from "preact";
@@ -30,26 +37,20 @@ import { LOCALE_LABELS, useLocale, useT } from "../lib/i18n";
 import { mediaPreviewsEnabled } from "../lib/linkPreview";
 import { addProgram, loadPrograms, removeProgram, upsertProgram } from "../lib/programStore";
 import { generateProgram } from "../lib/programGenerate";
-import {
-  activeTtsEngine,
-  isTtsSupported,
-  listVoices,
-  pickDefaultVoice,
-  speakSegments,
-  type TtsPlayback,
-} from "../lib/tts";
-import { downloadProgramAudio, playProgramAudio, renderProgramAudio } from "../lib/programAudio";
+import { activeTtsEngine, isTtsSupported, listVoices, pickDefaultVoice } from "../lib/tts";
+import { downloadProgramAudio, renderProgramAudio } from "../lib/programAudio";
 import { OPENAI_TTS_VOICES, useVoiceOptions } from "../lib/voices";
 import { emptyLlmConfig, loadLlmConfig, resolveVoice } from "../lib/llmConfig";
 import { loadReactions, subscribeReactions } from "../lib/reactionStore";
 import { computeDailyRanking, type RankingEntry } from "../lib/ranking";
 import { enqueueJob, findPendingJob, isCancelError } from "../lib/jobQueue";
 import { useJobQueue } from "../hooks/useJobQueue";
+import { usePlayer } from "../hooks/usePlayer";
+import { pausePlayer, playProgram, resumePlayer, stopPlayer } from "../lib/playerStore";
 import "../styles/components.css";
 import "../styles/reactions.css";
 import "../styles/program.css";
 
-type PlayState = "idle" | "playing" | "paused";
 type ShareState = "busy" | "done";
 
 const RATE_OPTIONS = [0.75, 1, 1.25, 1.5, 2];
@@ -166,10 +167,6 @@ export function ProgramView(props: {
     resolvedVoice?.apiKey ?? "",
   );
   const [rate, setRate] = useState(1);
-  const [playState, setPlayState] = useState<PlayState>("idle");
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [playbackError, setPlaybackError] = useState<string | null>(null);
-  const playbackRef = useRef<TtsPlayback | null>(null);
   const segmentRefs = useRef<Array<HTMLLIElement | null>>([]);
 
   // Programs shared by others — ones we authored ourselves are excluded even
@@ -183,6 +180,16 @@ export function ProgramView(props: {
     null;
   const isOwnProgram = selectedProgram ? programs.some((p) => p.id === selectedProgram.id) : false;
   const hasAudio = (selectedProgram?.audioCids?.length ?? 0) > 0;
+
+  // Playback lives in the app-global store now (lib/playerStore) — this
+  // view only reflects it, and only when the *selected* program is the one
+  // actually playing. Picking a different program in the list just changes
+  // what this pane shows; it no longer touches whatever's playing.
+  const player = usePlayer();
+  const isSelectedPlaying = selectedProgram ? player.program?.id === selectedProgram.id : false;
+  const playState = isSelectedPlaying ? player.playState : "idle";
+  const currentIndex = isSelectedPlaying ? player.currentIndex : 0;
+  const playbackError = isSelectedPlaying ? player.error : null;
 
   // --- Today's popular programs (daily reaction ranking, program targets only) ---
 
@@ -235,18 +242,6 @@ export function ProgramView(props: {
     setSelectedVoice(pickDefaultVoice(voices, selectedProgram.lang ?? locale));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedProgram?.id, voices]);
-
-  // Switching programs (or unmounting) always stops any in-flight playback
-  // and resets the player UI back to idle.
-  useEffect(() => {
-    setPlayState("idle");
-    setCurrentIndex(0);
-    setPlaybackError(null);
-    return () => {
-      playbackRef.current?.stop();
-      playbackRef.current = null;
-    };
-  }, [selectedProgramId]);
 
   useEffect(() => {
     if (playState === "idle") return;
@@ -317,10 +312,8 @@ export function ProgramView(props: {
   function handleDeleteProgram(program: RadioProgram) {
     const title = program.title || t("program.untitledProgram");
     if (!window.confirm(t("program.deleteConfirm", { title }))) return;
-    if (selectedProgramId === program.id) {
-      playbackRef.current?.stop();
-      playbackRef.current = null;
-      setPlayState("idle");
+    if (player.program?.id === program.id) {
+      stopPlayer();
     }
     const next = removeProgram(program.id);
     setPrograms(next);
@@ -350,39 +343,12 @@ export function ProgramView(props: {
     }
   }
 
-  function resetPlayback() {
-    playbackRef.current = null;
-    setPlayState("idle");
-    setCurrentIndex(0);
-  }
-
+  // playerStore.playProgram() itself picks creator-rendered audio vs. live
+  // TTS (based on program.audioCids) — this view just supplies the voice/
+  // rate/openaiVoice choices from its own picker UI.
   function handlePlay() {
     if (!selectedProgram) return;
-    setPlaybackError(null);
-    setCurrentIndex(0);
-    const onSegment = (index: number) => setCurrentIndex(index);
-    const onEnd = () => resetPlayback();
-    const onError = (err: unknown) => {
-      setPlaybackError(err instanceof Error ? err.message : String(err));
-      resetPlayback();
-    };
-    // Prefer the creator-rendered audio (no TTS settings needed to hear it)
-    // over live speech synthesis whenever the program has one.
-    const playback = hasAudio
-      ? playProgramAudio(
-          { cids: selectedProgram.audioCids ?? [], mime: selectedProgram.audioMime ?? "audio/mpeg" },
-          { rate, onSegment, onEnd, onError },
-        )
-      : speakSegments(selectedProgram.segments.map((s) => s.text), {
-          voice: selectedVoice,
-          rate,
-          openaiVoice,
-          onSegment,
-          onEnd,
-          onError,
-        });
-    playbackRef.current = playback;
-    setPlayState("playing");
+    void playProgram(selectedProgram, { voice: selectedVoice, openaiVoice, rate });
   }
 
   async function handleRenderAudio(program: RadioProgram) {
@@ -440,19 +406,13 @@ export function ProgramView(props: {
   }
 
   function handlePauseResume() {
-    if (!playbackRef.current) return;
-    if (playState === "playing") {
-      playbackRef.current.pause();
-      setPlayState("paused");
-    } else if (playState === "paused") {
-      playbackRef.current.resume();
-      setPlayState("playing");
-    }
+    if (!isSelectedPlaying) return;
+    if (playState === "playing") pausePlayer();
+    else if (playState === "paused") resumePlayer();
   }
 
   function handleStop() {
-    playbackRef.current?.stop();
-    resetPlayback();
+    stopPlayer();
   }
 
   // Fetched voices when available, else the standard OpenAI set — always

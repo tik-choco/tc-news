@@ -84,6 +84,11 @@ export const zh: Messages = {
     inboxClearSelection: "清除选择",
     // 当来自其他来源的近似重复内容被合并时，卡片上显示的"+N"徽标
     inboxDupAria: "还有{count}条来自其他来源的相似内容",
+    filterAll: "全部",
+    filterArticles: "文章",
+    filterAudio: "音频",
+    programsHeading: "节目",
+    ownAuthorLabel: "我",
   },
 
   articles: {
@@ -326,7 +331,7 @@ export const zh: Messages = {
   },
 
   program: {
-    tabLabel: "节目",
+    tabLabel: "工作室",
     title: "新闻节目",
     createHeading: "创建节目",
     createHint: "AI 会根据你选择的文章生成广播风格的朗读台本。",
@@ -365,5 +370,11 @@ export const zh: Messages = {
     downloadFailed: "下载失败：{detail}",
     popularHeading: "今日热门节目",
     popularEmpty: "今天还没有节目收到反馈。",
+  },
+
+  player: {
+    pause: "暂停",
+    resume: "继续",
+    stop: "停止",
   },
 };

@@ -52,6 +52,7 @@ import { ProgramView } from "./views/ProgramView";
 import { SettingsView } from "./views/SettingsView";
 import { Onboarding } from "./components/Onboarding";
 import { JobQueueToast } from "./components/JobQueueToast";
+import { MiniPlayer } from "./components/MiniPlayer";
 
 // Nav tab labels come from each domain's own catalog (feed.tabLabel etc.) so
 // the domain owner controls the wording; this file only wires icon + tab id.
@@ -406,6 +407,8 @@ export function App() {
             globalArticles={settings.roomId === GLOBAL_ARTICLES_ROOM_ID ? sharedArticles : globalRoom.sharedArticles}
             globalConnected={settings.roomId === GLOBAL_ARTICLES_ROOM_ID ? connected : globalRoom.connected}
             onOpenGlobal={handleOpenGlobal}
+            sharedPrograms={allSharedPrograms}
+            onOpenProgram={handleOpenProgram}
           />
         )}
         {tab === "shared" && (
@@ -482,6 +485,7 @@ export function App() {
         <Onboarding settings={settings} onSettingsChange={handleSettingsChange} onClose={closeOnboarding} />
       )}
       <JobQueueToast />
+      <MiniPlayer />
     </div>
   );
 }

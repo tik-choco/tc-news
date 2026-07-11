@@ -7,6 +7,7 @@ import { errors } from "./catalog/errors";
 import { translate } from "./catalog/translate";
 import { onboarding } from "./catalog/onboarding";
 import { program } from "./catalog/program";
+import { player } from "./catalog/player";
 
 /**
  * The full message tree, assembled from the per-domain catalogs. `ja` is the
@@ -24,6 +25,7 @@ export const ja = {
   translate: translate.ja,
   onboarding: onboarding.ja,
   program: program.ja,
+  player: player.ja,
 };
 
 export const en: Messages = {
@@ -36,6 +38,7 @@ export const en: Messages = {
   translate: translate.en,
   onboarding: onboarding.en,
   program: program.en,
+  player: player.en,
 };
 
 export type Messages = typeof ja;
