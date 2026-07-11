@@ -36,6 +36,7 @@ function sanitizeProgram(value: unknown): RadioProgram | null {
   if (typeof value.authorDid === "string" && value.authorDid) program.authorDid = value.authorDid;
   if (typeof value.authorName === "string" && value.authorName) program.authorName = value.authorName;
   if (typeof value.shared === "boolean") program.shared = value.shared;
+  if (typeof value.imageUrl === "string" && value.imageUrl) program.imageUrl = value.imageUrl;
 
   // audioCidsはsegmentsとインデックス対応するため、生のsegments配列が1件でも
   // 間引かれていたら対応がずれる。また audioCids 自体も全要素が非空文字列で

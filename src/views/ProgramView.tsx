@@ -27,6 +27,7 @@ import { EmptyState } from "../components/EmptyState";
 import { ReactionBar } from "../components/ReactionBar";
 import { formatRelativeTime } from "../components/ArticleCard";
 import { LOCALE_LABELS, useLocale, useT } from "../lib/i18n";
+import { mediaPreviewsEnabled } from "../lib/linkPreview";
 import { addProgram, loadPrograms, removeProgram, upsertProgram } from "../lib/programStore";
 import { generateProgram } from "../lib/programGenerate";
 import {
@@ -57,6 +58,25 @@ const RATE_OPTIONS = [0.75, 1, 1.25, 1.5, 2];
 // idを作る(FeedView.tsxのbuildTargetIdと同じ考え方)。
 function buildTargetId(ids: string[]): string {
   return ids.slice().sort().join("+");
+}
+
+// Program row thumbnail: same opt-in-and-drop-silently-on-failure idiom as
+// ArticleCard's thumbnail (see components/ArticleCard.tsx), just without the
+// OGP fallback — a program's imageUrl is already fully derived at generation
+// time (see programGenerate.ts), so there's nothing to fetch here.
+function ProgramRowThumb(props: { imageUrl: string; alt: string }): JSX.Element | null {
+  const [failed, setFailed] = useState(false);
+  if (failed) return null;
+  return (
+    <img
+      class="program-row-thumb"
+      src={props.imageUrl}
+      alt={props.alt}
+      loading="lazy"
+      referrerpolicy="no-referrer"
+      onError={() => setFailed(true)}
+    />
+  );
 }
 
 export function ProgramView(props: {
@@ -552,6 +572,12 @@ export function ProgramView(props: {
                     class={`program-row${program.id === selectedProgramId ? " program-row--active" : ""}`}
                     onClick={() => setSelectedProgramId(program.id)}
                   >
+                    {program.imageUrl && mediaPreviewsEnabled() ? (
+                      <ProgramRowThumb
+                        imageUrl={program.imageUrl}
+                        alt={program.title || t("program.untitledProgram")}
+                      />
+                    ) : null}
                     <div class="program-row-text">
                       <span class="program-row-title">{program.title || t("program.untitledProgram")}</span>
                       <span class="program-row-meta">
@@ -606,6 +632,12 @@ export function ProgramView(props: {
                     }`}
                     onClick={() => setSelectedProgramId(program.id)}
                   >
+                    {program.imageUrl && mediaPreviewsEnabled() ? (
+                      <ProgramRowThumb
+                        imageUrl={program.imageUrl}
+                        alt={program.title || t("program.untitledProgram")}
+                      />
+                    ) : null}
                     <div class="program-row-text">
                       <span class="program-row-title">{program.title || t("program.untitledProgram")}</span>
                       <span class="program-row-meta">

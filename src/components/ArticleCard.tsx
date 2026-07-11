@@ -3,11 +3,12 @@
 // share/delete) and SharedView (received articles, read-only). Hover lifts
 // the card slightly (translateY + shadow) — see styles/components.css.
 import type { ComponentChildren, JSX } from "preact";
-import { useState } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
 import type { NewsArticle } from "../types";
 import { translate, useLocale, useT, type Locale } from "../lib/i18n";
 import { categoryLabelKey, coerceCategory } from "../lib/categories";
 import { mediaPreviewsEnabled } from "../lib/linkPreview";
+import { useLinkPreview } from "../hooks/useLinkPreview";
 
 const MINUTE_MS = 60_000;
 const HOUR_MS = 3_600_000;
@@ -40,9 +41,17 @@ export function ArticleCard(props: {
   const { locale } = useLocale();
   const category = article.category ? coerceCategory(article.category) : null;
   // Thumbnail is opt-in per settings and drops itself silently on load
-  // failure — no broken-image icon in a list of cards.
+  // failure — no broken-image icon in a list of cards. Articles without a
+  // stored imageUrl fall back to the OGP image of their first source link.
   const [thumbFailed, setThumbFailed] = useState(false);
-  const showThumb = Boolean(article.imageUrl) && mediaPreviewsEnabled() && !thumbFailed;
+  const needsFallback = !article.imageUrl && mediaPreviewsEnabled();
+  const preview = useLinkPreview(needsFallback ? article.sourceLinks?.[0]?.url : undefined);
+  const thumbUrl = article.imageUrl ?? preview?.imageUrl;
+  const showThumb = Boolean(thumbUrl) && mediaPreviewsEnabled() && !thumbFailed;
+
+  useEffect(() => {
+    setThumbFailed(false);
+  }, [thumbUrl]);
   return (
     <div class={`article-card${active ? " article-card--active" : ""}`}>
       <button type="button" class="article-card-main" onClick={onClick}>
@@ -76,7 +85,7 @@ export function ArticleCard(props: {
         {showThumb ? (
           <img
             class="article-card-thumb"
-            src={article.imageUrl}
+            src={thumbUrl}
             alt={article.title || ""}
             loading="lazy"
             referrerpolicy="no-referrer"

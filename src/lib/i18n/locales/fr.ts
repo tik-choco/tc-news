@@ -168,6 +168,8 @@ export const fr: Messages = {
     switchToLight: "Passer au mode clair",
     tabGeneral: "Général",
     tabLlm: "LLM",
+    tabNetwork: "AI Network",
+    tabTts: "Voix",
     language: "Langue",
     displayName: "Nom affiché",
     roomId: "ID du salon partagé",
@@ -235,6 +237,10 @@ export const fr: Messages = {
     networkStatusSearching: "Recherche d'un fournisseur...",
     networkStatusConnected: "Connecté (modèles : {models})",
     networkStatusError: "Erreur : {detail}",
+    networkProviderEnabled: "Partager le LLM de cette application avec l'AI Network",
+    networkProviderHint:
+      "Répond aux requêtes LLM d'autres pairs (consommateurs) du salon en utilisant le point de terminaison du preset par défaut. Le partage continue même si l'écran des paramètres est fermé.",
+    networkProviderNotConfigured: "Définissez une Base URL et un modèle sur le preset par défaut pour commencer à fournir.",
     ttsHeading: "TTS (voix)",
     ttsHint:
       "Utilise une API vocale compatible OpenAI (/audio/speech) pour lire les programmes à voix haute. Si désactivé ou non configuré, la synthèse vocale intégrée du navigateur est utilisée à la place.",

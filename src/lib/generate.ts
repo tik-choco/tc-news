@@ -11,6 +11,7 @@ import type { FeedItem, NewsArticle, SourceLink } from "../types";
 import { requestChatCompletion } from "./llm";
 import { tGlobal } from "./i18n";
 import { coerceCategory } from "./categories";
+import { fetchLinkPreview } from "./linkPreview";
 
 // English-based prompt so it behaves consistently regardless of the target
 // article language, which is injected via {language}. The JSON output shape
@@ -63,9 +64,16 @@ function buildSourceLinks(items: FeedItem[]): SourceLink[] {
   return items.map((item) => ({ title: item.title, url: item.link }));
 }
 
-/** 最初に画像を持つソースアイテムのサムネイルをヒーロー画像として採用する。 */
-export function pickHeroImage(items: FeedItem[]): string | undefined {
-  return items.find((i) => i.imageUrl)?.imageUrl;
+/** 最初に画像を持つソースアイテムのサムネイルをヒーロー画像として採用する。
+ * どのアイテムにも画像がない場合、先頭3件のOGP画像を順に試す。 */
+export async function pickHeroImage(items: FeedItem[]): Promise<string | undefined> {
+  const direct = items.find((i) => i.imageUrl)?.imageUrl;
+  if (direct) return direct;
+  for (const item of items.slice(0, 3)) {
+    const preview = await fetchLinkPreview(item.link);
+    if (preview?.imageUrl) return preview.imageUrl;
+  }
+  return undefined;
 }
 
 function newArticleId(): string {
@@ -109,6 +117,7 @@ export async function generateArticle(items: FeedItem[], opts: GenerateArticleOp
   const sourceLinks = buildSourceLinks(items);
   const createdAt = Date.now();
   const id = newArticleId();
+  const heroImage = await pickHeroImage(items);
 
   try {
     const data = JSON.parse(extractJson(responseText)) as Record<string, unknown>;
@@ -125,7 +134,7 @@ export async function generateArticle(items: FeedItem[], opts: GenerateArticleOp
       body,
       tags,
       sourceLinks,
-      imageUrl: pickHeroImage(items),
+      imageUrl: heroImage,
       authorDid: opts.authorDid,
       authorName: opts.authorName,
       createdAt,
@@ -142,7 +151,7 @@ export async function generateArticle(items: FeedItem[], opts: GenerateArticleOp
       body: responseText,
       tags: [],
       sourceLinks,
-      imageUrl: pickHeroImage(items),
+      imageUrl: heroImage,
       authorDid: opts.authorDid,
       authorName: opts.authorName,
       createdAt,

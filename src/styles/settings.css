@@ -1,5 +1,8 @@
-/* SettingsView: 全般 / LLM tabs. Tracks tc-town's settings screen layout
-   (720px column, pill tab bar, profile cards) rewired to tc-news' tokens. */
+/* SettingsView: 全般 / LLM / AI Network / 音声(TTS) の4タブ. Tracks tc-town's
+   settings screen layout (720px column, pill tab bar, profile cards) rewired
+   to tc-news' tokens. The AI Network provider card (ProviderStatusPanel) is
+   from @tik-choco/mistai/preact and brings its own styling via ui.css — only
+   the surrounding spacing is styled here. */
 
 .settings-view {
   padding: var(--space-5);
@@ -101,6 +104,26 @@
 .checkbox-field .field-hint {
   display: block;
   margin-top: 2px;
+}
+
+/* Thin rule separating the AI Network tab's consumer and provider
+   sub-sections (they share one settings-section panel, no heading level
+   between them). */
+.settings-divider {
+  height: 1px;
+  margin: var(--space-1) 0;
+  background: var(--border);
+  border: none;
+}
+
+/* networkProviderEnabled's checkbox label doubles as that sub-section's
+   heading (see settings-divider above) — the Server icon needs inline
+   alignment with its text, which plain checkbox-field spans don't need. */
+.checkbox-field--heading span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: 700;
 }
 
 /* --- LLM providers / presets (shared tc-shared-llm-config-v1 entries) -------------------------- */

@@ -1,12 +1,28 @@
-// Settings screen: 全般 (app-level prefs, persisted via props.onSettingsChange)
-// and LLM. The LLM tab edits two layers:
+// Settings screen: 全般 / LLM / AI Network / 音声(TTS) の4タブ構成。
+//   - general: app-level prefs, persisted via props.onSettingsChange.
+//   - llm: providers/presets + default/orchestrator/worker role pointers.
+//   - network: AI Networkのconsumer(他者のLLMを使う)とprovider(自分のLLMを
+//     提供する)。providerのライフサイクル本体はapp.tsx側
+//     (hooks/useNetworkProviderHost.ts)がマウントし続けており、ここは
+//     props.networkProvider(UseNetworkProviderResult)を表示するだけ —
+//     設定画面を閉じても提供が途切れないようにするため。
+//   - tts: 読み上げ(TTS)の接続先。
+//
+// llm/network タブはどちらも2層の設定を編集する:
 //   - the co-owned shared config tc-shared-llm-config-v1 (providers/presets/
 //     tts/network.roomId — lib/llmConfig.ts), which other tik-choco apps on
 //     the same origin read and write too, kept in sync here via
 //     subscribeLlmConfig() so an edit made from another app's tab shows up
 //     live;
 //   - tc-news' own local settings (which preset plays which role, plus the
-//     ttsEnabled/networkConsumerEnabled toggles — lib/llmSettings.ts).
+//     ttsEnabled/networkConsumerEnabled/networkProviderEnabled toggles —
+//     lib/llmSettings.ts).
+//
+// The active tab is pure UI state — it must not gate any hook below (the
+// consumer connection effect, the shared-config subscription, etc. all stay
+// unconditional at the top of the component), so switching tabs never resets
+// a live connection. Selected tab is remembered in localStorage (tc-town's
+// SettingsView does the same — see ../tc-town/src/views/SettingsView.tsx).
 import { useEffect, useMemo, useState } from "preact/hooks";
 import type { JSX } from "preact";
 import {
@@ -15,16 +31,21 @@ import {
   Plug,
   Plus,
   RefreshCw,
+  Server,
   Settings as SettingsIcon,
   Sliders,
   Sparkles,
   Trash2,
   Volume2,
 } from "lucide-preact";
+import { MESSAGES_EN, MESSAGES_JA } from "@tik-choco/mistai";
+import { ProviderStatusPanel } from "@tik-choco/mistai/preact";
+import "@tik-choco/mistai/ui.css";
 import type { AppSettings } from "../types";
 import {
   emptyLlmConfig,
   loadLlmConfig,
+  resolvePreset,
   saveLlmConfig,
   subscribeLlmConfig,
   type LlmProviderV1,
@@ -46,6 +67,7 @@ import {
   disconnectNetworkConsumer,
   onConsumerStatusChange,
   type ConsumerStatus,
+  type UseNetworkProviderResult,
 } from "../lib/network";
 import { useModelOptions, type ModelFetchStatus } from "../lib/models";
 import { OPENAI_TTS_VOICES, useVoiceOptions } from "../lib/voices";
@@ -53,7 +75,31 @@ import { LOCALES, LOCALE_LABELS, useLocale, useT } from "../lib/i18n";
 import "../styles/components.css";
 import "../styles/settings.css";
 
-type SettingsTab = "general" | "llm";
+type SettingsTab = "general" | "llm" | "network" | "tts";
+
+const SETTINGS_TAB_IDS: SettingsTab[] = ["general", "llm", "network", "tts"];
+const SETTINGS_TAB_STORAGE_KEY = "tc-news:settings-tab";
+
+/** Loads the last-active tab from localStorage, validated against the known
+ * tab ids. Falls back to "general" if unset, malformed, or storage is
+ * unavailable (private mode, etc.) — never throws. */
+function loadSettingsTab(): SettingsTab {
+  try {
+    const raw = localStorage.getItem(SETTINGS_TAB_STORAGE_KEY);
+    if (raw && (SETTINGS_TAB_IDS as string[]).includes(raw)) return raw as SettingsTab;
+  } catch {
+    // localStorage unavailable — fall back to default.
+  }
+  return "general";
+}
+
+function saveSettingsTab(tab: SettingsTab): void {
+  try {
+    localStorage.setItem(SETTINGS_TAB_STORAGE_KEY, tab);
+  } catch {
+    // Non-fatal — the tab just won't be remembered next visit.
+  }
+}
 
 /** Dedupes `options` against the current `value` (so a manually-typed or
  * stale value stays selectable) and sorts for a stable <select> order. Shared
@@ -206,11 +252,18 @@ function VoiceField(props: {
 export function SettingsView(props: {
   settings: AppSettings;
   onSettingsChange: (next: AppSettings) => void;
+  networkProvider: UseNetworkProviderResult;
 }): JSX.Element {
-  const { settings, onSettingsChange } = props;
+  const { settings, onSettingsChange, networkProvider } = props;
   const t = useT();
   const { locale, setLocale } = useLocale();
-  const [tab, setTab] = useState<SettingsTab>("general");
+
+  // Pure UI state — must not gate any hook below (see header comment).
+  const [tab, setTabState] = useState<SettingsTab>(() => loadSettingsTab());
+  function setTab(next: SettingsTab): void {
+    setTabState(next);
+    saveSettingsTab(next);
+  }
 
   // tc-news-local role pointers + toggles (lib/llmSettings.ts).
   const [provider, setProvider] = useState<ProviderSettings>(() => loadProviderSettings());
@@ -344,6 +397,13 @@ export function SettingsView(props: {
     }
   }
 
+  // ----- AI Network provider (share this app's LLM) -------------------------
+  // The provider's connect/serve lifecycle itself lives in app.tsx
+  // (hooks/useNetworkProviderHost.ts) so it keeps running while this settings
+  // screen is closed; props.networkProvider is just the live status to render.
+  const target = useMemo(() => resolvePreset(shared), [shared]);
+  const upstreamConfigured = Boolean(target && target.model.trim() && target.baseUrl.trim());
+
   return (
     <div class="settings-view">
       <div class="settings-inner">
@@ -355,7 +415,9 @@ export function SettingsView(props: {
           <button
             type="button"
             role="tab"
+            id="settings-tab-general"
             aria-selected={tab === "general"}
+            aria-controls="settings-panel-general"
             class={`settings-tab${tab === "general" ? " settings-tab--active" : ""}`}
             onClick={() => setTab("general")}
           >
@@ -364,16 +426,45 @@ export function SettingsView(props: {
           <button
             type="button"
             role="tab"
+            id="settings-tab-llm"
             aria-selected={tab === "llm"}
+            aria-controls="settings-panel-llm"
             class={`settings-tab${tab === "llm" ? " settings-tab--active" : ""}`}
             onClick={() => setTab("llm")}
           >
             <Cpu size={14} /> {t("settings.tabLlm")}
           </button>
+          <button
+            type="button"
+            role="tab"
+            id="settings-tab-network"
+            aria-selected={tab === "network"}
+            aria-controls="settings-panel-network"
+            class={`settings-tab${tab === "network" ? " settings-tab--active" : ""}`}
+            onClick={() => setTab("network")}
+          >
+            <Network size={14} /> {t("settings.tabNetwork")}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            id="settings-tab-tts"
+            aria-selected={tab === "tts"}
+            aria-controls="settings-panel-tts"
+            class={`settings-tab${tab === "tts" ? " settings-tab--active" : ""}`}
+            onClick={() => setTab("tts")}
+          >
+            <Volume2 size={14} /> {t("settings.tabTts")}
+          </button>
         </div>
 
         {tab === "general" ? (
-          <section class="settings-section" role="tabpanel" aria-label={t("settings.tabGeneral")}>
+          <section
+            class="settings-section"
+            role="tabpanel"
+            id="settings-panel-general"
+            aria-labelledby="settings-tab-general"
+          >
             <h2 class="settings-heading">{t("settings.tabGeneral")}</h2>
 
             <label class="field">
@@ -476,7 +567,12 @@ export function SettingsView(props: {
         ) : null}
 
         {tab === "llm" ? (
-          <section class="settings-section" role="tabpanel" aria-label={t("settings.tabLlm")}>
+          <section
+            class="settings-section"
+            role="tabpanel"
+            id="settings-panel-llm"
+            aria-labelledby="settings-tab-llm"
+          >
             <p class="field-hint">{t("settings.llmHint")}</p>
 
             {/* ----- Providers (shared接続情報) ----------------------------- */}
@@ -681,20 +777,20 @@ export function SettingsView(props: {
               </select>
               <span class="field-hint">{t("settings.workerPresetHint")}</span>
             </label>
+          </section>
+        ) : null}
 
+        {tab === "network" ? (
+          <section
+            class="settings-section"
+            role="tabpanel"
+            id="settings-panel-network"
+            aria-labelledby="settings-tab-network"
+          >
             <h2 class="settings-heading">
               <Network size={16} /> {t("settings.networkHeading")}
             </h2>
             <p class="field-hint">{t("settings.networkHint")}</p>
-
-            <label class="checkbox-field">
-              <input
-                type="checkbox"
-                checked={provider.networkConsumerEnabled}
-                onChange={(e) => updateProvider({ ...provider, networkConsumerEnabled: e.currentTarget.checked })}
-              />
-              <span>{t("settings.networkConsumerEnabled")}</span>
-            </label>
 
             <label class="field">
               <span>{t("settings.networkRoomId")}</span>
@@ -706,12 +802,60 @@ export function SettingsView(props: {
               <span class="field-hint">{t("settings.networkRoomIdHint")}</span>
             </label>
 
+            {/* ----- Consumer: 共有された他者のLLMを利用する ------------------- */}
+            <label class="checkbox-field">
+              <input
+                type="checkbox"
+                checked={provider.networkConsumerEnabled}
+                onChange={(e) => updateProvider({ ...provider, networkConsumerEnabled: e.currentTarget.checked })}
+              />
+              <span>{t("settings.networkConsumerEnabled")}</span>
+            </label>
+
             {provider.networkConsumerEnabled ? (
               <p class="field-hint" role="status">
                 {consumerStatusLabel(consumer)}
               </p>
             ) : null}
 
+            {/* ----- Provider: 自分のLLMをAI Networkへ提供する ------------------- */}
+            <div class="settings-divider" />
+
+            <label class="checkbox-field checkbox-field--heading">
+              <input
+                type="checkbox"
+                checked={provider.networkProviderEnabled}
+                onChange={(e) => updateProvider({ ...provider, networkProviderEnabled: e.currentTarget.checked })}
+              />
+              <span>
+                <Server size={14} /> {t("settings.networkProviderEnabled")}
+              </span>
+            </label>
+            <p class="field-hint">{t("settings.networkProviderHint")}</p>
+
+            {provider.networkProviderEnabled ? (
+              <ProviderStatusPanel
+                status={networkProvider.status}
+                statusUpdatedAt={networkProvider.statusUpdatedAt}
+                errorMessage={networkProvider.errorMessage}
+                ownNodeId={networkProvider.ownNodeId}
+                peers={networkProvider.peers}
+                consumerCount={networkProvider.consumerCount}
+                logs={networkProvider.logs}
+                messages={locale === "ja" ? MESSAGES_JA : MESSAGES_EN}
+                notice={!upstreamConfigured ? <p class="field-hint">{t("settings.networkProviderNotConfigured")}</p> : null}
+              />
+            ) : null}
+          </section>
+        ) : null}
+
+        {tab === "tts" ? (
+          <section
+            class="settings-section"
+            role="tabpanel"
+            id="settings-panel-tts"
+            aria-labelledby="settings-tab-tts"
+          >
             <h2 class="settings-heading">
               <Volume2 size={16} /> {t("settings.ttsHeading")}
             </h2>

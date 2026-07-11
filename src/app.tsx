@@ -37,6 +37,7 @@ import { GLOBAL_ARTICLES_ROOM_ID } from "./lib/newsWire";
 import { forwardArticleToGlobal } from "./lib/globalArticlesReader";
 import { readHash, writeHash, onHashChange } from "./lib/hashRoute";
 import { useTheme } from "./hooks/useTheme";
+import { useNetworkProviderHost } from "./hooks/useNetworkProviderHost";
 import { useNewsRoom } from "./hooks/useNewsRoom";
 import { useUnreadShared } from "./hooks/useUnreadShared";
 import { ensureDidIdentity } from "./crypto/didIdentity";
@@ -154,6 +155,10 @@ export function App() {
     const room = loadLlmConfig()?.network.roomId.trim() ?? "";
     if (provider.networkConsumerEnabled && room) void connectNetworkConsumer(room);
   }, []);
+
+  // AI Network provider: アプリ全体の寿命でホストする(設定画面を閉じても
+  // 提供が続くように)。SettingsViewには表示用にstatusを渡すだけ。
+  const networkProvider = useNetworkProviderHost();
 
   // #room=<roomId> startup handling: a one-shot deep link that switches the
   // active room, then clears the hash so the user's own navigation (or a
@@ -470,7 +475,7 @@ export function App() {
           />
         )}
         {tab === "settings" && (
-          <SettingsView settings={settings} onSettingsChange={handleSettingsChange} />
+          <SettingsView settings={settings} onSettingsChange={handleSettingsChange} networkProvider={networkProvider} />
         )}
       </main>
       {showOnboarding && (

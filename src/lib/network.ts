@@ -1,12 +1,30 @@
-// App-side wiring for @tik-choco/mistai's AI Network consumer: injects the
-// vendored mistlib node into the shared ConsumerClient so tc-news can send
-// its LLM requests to a provider peer in a room instead of (or alongside)
-// a direct OpenAI-compatible endpoint. Ported from tc-town's src/lib/network.ts
-// with the provider-hook re-exports dropped — tc-news is consumer-only for now.
+// App-side wiring for @tik-choco/mistai's AI Network roles: injects the
+// vendored mistlib node into the shared ConsumerClient (send tc-news' LLM
+// requests to a provider peer in a room) and re-exports the library's
+// provider hook (share this app's configured LLM to a room — hosted by
+// app.tsx so it keeps serving while the settings screen is closed). Ported
+// from tc-town's src/lib/network.ts.
 
 import { ConsumerClient, type ConsumerStatus, type ConsumerStatusListener, type MistNodeLike } from "@tik-choco/mistai";
 import type { ChatMessage } from "@tik-choco/mistai";
+import {
+  useNetworkProvider,
+  type NetworkProviderPeer,
+  type NetworkProviderStatus,
+  type UseNetworkProviderResult,
+} from "@tik-choco/mistai/preact";
 import { getNode, subscribeEvent, NODE_ID_STORAGE_KEY } from "./mistClient";
+
+// Persistent id for this participant's mist node. Shared by the consumer
+// client and the provider hook so both present the same identity on the room.
+// Owned by mistClient.ts; re-exported for the provider hook's options.
+export { NODE_ID_STORAGE_KEY };
+
+// The consumer session and the provider session typically share one AI
+// Network room on the one real MistNode, but each SharedMistNode below tears
+// its session down independently. Refcount the physical room joins so
+// disabling one role doesn't yank the room out from under the other.
+const roomRefCounts = new Map<string, number>();
 
 type RealMistNode = Awaited<ReturnType<typeof getNode>>;
 
@@ -50,6 +68,7 @@ class SharedMistNode implements MistNodeLike {
 
   joinRoom(roomId: string): void {
     this.roomId = roomId;
+    roomRefCounts.set(roomId, (roomRefCounts.get(roomId) ?? 0) + 1);
     // ConsumerClient broadcasts a consumer_hello as soon as this (void)
     // method returns, but the wasm node rejects sendMessage for a room whose
     // session isn't built yet ("Room not joined"). Join with the awaitable
@@ -67,10 +86,17 @@ class SharedMistNode implements MistNodeLike {
     this.unsubscribe = null;
     this.roomId = null;
     this.joinPromise = null;
-    // Explicit roomId only: the real node's parameterless leaveRoom() fully
-    // deinitializes the shared node (see mistClient.ts), which would break
-    // the news rooms still using it.
-    if (roomId) this.realNode?.leaveRoom(roomId);
+    if (!roomId) return;
+    // Last session out actually leaves. Explicit roomId only: the real
+    // node's parameterless leaveRoom() fully deinitializes the shared node
+    // (see mistClient.ts), which would break the news rooms still using it.
+    const remaining = (roomRefCounts.get(roomId) ?? 1) - 1;
+    if (remaining > 0) {
+      roomRefCounts.set(roomId, remaining);
+      return;
+    }
+    roomRefCounts.delete(roomId);
+    this.realNode?.leaveRoom(roomId);
   }
 
   sendMessage(toId: string | null | undefined, payload: Uint8Array, delivery?: number): void {
@@ -103,7 +129,8 @@ export const networkClient = new ConsumerClient({
   nodeIdStorageKey: NODE_ID_STORAGE_KEY,
 });
 
-export type { ConsumerStatus, ConsumerStatusListener };
+export type { ConsumerStatus, ConsumerStatusListener, NetworkProviderPeer, NetworkProviderStatus, UseNetworkProviderResult };
+export { useNetworkProvider };
 
 /** Subscribes to consumer connection status changes. Returns an unsubscribe function. */
 export function onConsumerStatusChange(listener: ConsumerStatusListener): () => void {
