@@ -1,0 +1,280 @@
+/* Emoji reactions (ReactionBar) + Daily Ranking pane (SharedView "ranking"
+   source). Tokens only — see index.css/shared.css for the palette. No
+   hardcoded hex: rank medal tints are color-mix()'d from --primary since the
+   design system has no dedicated gold/silver/bronze tokens. */
+
+/* Trophy icon inside the ranking chip added to SharedView's existing
+   .shared-source-switch/.shared-source-btn (styles/shared.css) — those
+   buttons have no icon+label flex layout of their own, so nudge the icon
+   inline instead of duplicating the whole rule set here. */
+.shared-source-btn svg {
+  margin-right: 3px;
+  vertical-align: -2px;
+}
+
+/* --- ReactionBar ---------------------------------------------------------- */
+
+.reaction-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.reaction-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: var(--space-1) var(--space-2);
+  font: inherit;
+  font-size: 0.8rem;
+  line-height: 1;
+  color: var(--text-muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
+}
+
+.reaction-btn:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+  transform: translateY(-1px);
+}
+
+.reaction-btn:disabled {
+  cursor: not-allowed;
+}
+
+.reaction-btn--busy {
+  opacity: 0.6;
+}
+
+.reaction-btn--own {
+  color: var(--primary);
+  background: var(--primary-soft);
+  border-color: var(--primary-border);
+}
+
+.reaction-btn--own:hover:not(:disabled) {
+  transform: none;
+}
+
+.reaction-btn--readonly {
+  cursor: default;
+}
+
+.reaction-btn--readonly:hover {
+  transform: none;
+}
+
+.reaction-btn-emoji {
+  font-size: 0.95em;
+}
+
+.reaction-btn-count {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.reaction-bar--compact .reaction-btn {
+  padding: 2px var(--space-2);
+  font-size: 0.74rem;
+}
+
+/* Wraps the reader-pane ReactionBar (SharedView.tsx), between the reader's
+   icon-button action row and the article body. */
+.shared-reader-reactions {
+  margin-bottom: var(--space-4);
+}
+
+/* --- Daily Ranking pane ----------------------------------------------------
+   Replaces the shared-list-pane content when the "ranking" source chip is
+   active; see SharedView.tsx. */
+
+.ranking-pane {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  grid-column: 1 / -1;
+  grid-row: 3;
+  /* Sits in the shared-view's bounded pane row (see shared.css), so it needs
+     its own scrollbar just like the list/reader panes it replaces. */
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.ranking-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ranking-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.ranking-hint {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.ranking-you-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  background: var(--primary-soft);
+  border: 1px solid var(--primary-border);
+  border-radius: var(--radius-m);
+}
+
+.ranking-you-heading {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--primary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.ranking-you-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-5);
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.ranking-you-empty {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.ranking-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ranking-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  box-shadow: var(--shadow-1);
+}
+
+button.ranking-row {
+  width: 100%;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
+}
+
+button.ranking-row:hover {
+  background: var(--surface-2);
+  transform: translateY(-1px);
+}
+
+.ranking-rank {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border-radius: 50%;
+}
+
+.ranking-rank--1 {
+  color: var(--on-primary);
+  background: color-mix(in srgb, var(--primary) 85%, white 15%);
+}
+
+.ranking-rank--2 {
+  color: var(--on-primary);
+  background: color-mix(in srgb, var(--primary) 60%, var(--text-subtle) 40%);
+}
+
+.ranking-rank--3 {
+  color: var(--on-primary);
+  background: color-mix(in srgb, var(--primary) 40%, var(--text-subtle) 60%);
+}
+
+.ranking-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ranking-row-title {
+  overflow: hidden;
+  font-weight: 600;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ranking-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 0.76rem;
+  color: var(--text-subtle);
+}
+
+.ranking-kind-breakdown {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.ranking-kind-breakdown span {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.ranking-row-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text);
+  text-align: right;
+}
+
+.ranking-program-badge {
+  padding: 2px var(--space-2);
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  background: var(--surface-3);
+  border-radius: var(--radius-pill);
+}

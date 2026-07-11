@@ -1,0 +1,186 @@
+/* ArticleReaderModal (components/ArticleReaderModal.tsx) — modal home for
+   the reader pane that used to live on the right side of ArticlesView. Same
+   scrim/z-index/animation convention as feedModal.css's .fim-* rules, but a
+   wider "read a whole article" panel (760px) instead of the feed detail's
+   720px, and its toolbar/notice/error classes are ported straight from
+   articles.css's .articles-reader-toolbar family (see ArticlesView, now
+   retired) under a reader-modal- prefix so this file is self-contained.
+   Tokens only, from index.css — both themes covered automatically. */
+
+.reader-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-5);
+  background: var(--scrim);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  animation: reader-modal-overlay-in 160ms var(--ease-out);
+}
+
+.reader-modal-panel {
+  position: relative;
+  width: 100%;
+  max-width: 760px;
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: var(--space-5) var(--space-6) var(--space-6);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-l);
+  box-shadow: var(--shadow-3);
+  animation: reader-modal-panel-in 340ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@keyframes reader-modal-overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes reader-modal-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(28px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reader-modal-overlay,
+  .reader-modal-panel {
+    animation-duration: 1ms !important;
+  }
+
+  .reader-modal-panel {
+    transform: none !important;
+  }
+}
+
+.reader-modal-close {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  appearance: none;
+  border: none;
+  background: var(--surface);
+  color: var(--text-subtle);
+  border-radius: 50%;
+  box-shadow: var(--shadow-1);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+
+.reader-modal-close:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+/* Toolbar: two flex groups (left = reactions/eval/translate, right =
+   share/delete + open-in-chat), space-between like ArticlesView's reader
+   toolbar. Right-padded past the close button so the two never overlap. */
+.reader-modal-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding-right: var(--space-6);
+  margin-bottom: var(--space-4);
+}
+
+.reader-modal-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.reader-modal-chat-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.reader-modal-chat-link:hover {
+  color: var(--primary);
+}
+
+/* Wraps ArticleCard's .eval-score-pill as a clickable toggle for the
+   EvaluationPanel, resetting the default button chrome the pill itself
+   doesn't set. */
+.reader-modal-eval-score-btn {
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.reader-modal-eval-error {
+  margin: 0 0 var(--space-4);
+  font-size: 0.8rem;
+  color: var(--danger-text);
+}
+
+/* Post-share "sent to tc-chat" notice / evaluation category-applied notice
+   — same treatment either way. */
+.reader-modal-chat-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  font-size: 0.82rem;
+  color: var(--success);
+  background: var(--success-soft);
+  border-radius: var(--radius-m);
+}
+
+.reader-modal-chat-notice a {
+  font-weight: 700;
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  white-space: nowrap;
+}
+
+.reader-modal-body {
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .reader-modal-overlay {
+    padding: var(--space-3);
+  }
+
+  .reader-modal-panel {
+    max-height: 92vh;
+    padding: var(--space-4);
+  }
+
+  .reader-modal-toolbar {
+    padding-right: 0;
+  }
+}

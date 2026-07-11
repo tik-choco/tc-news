@@ -1,0 +1,327 @@
+/* First-run onboarding wizard (components/Onboarding.tsx) — a modal overlay
+   above the app shell. Uses the shared design tokens from src/index.css so it
+   tracks light/dark automatically ([data-theme="dark"] on the root). Ported
+   from tc-town's styles/onboarding.css with its accent/surface/space tokens
+   remapped onto tc-news's (newsroom red --primary instead of teal --accent,
+   no --z-modal token so the overlay sets z-index directly). */
+
+.ob-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--scrim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-5);
+  z-index: 100;
+  animation: tc-ob-overlay-in var(--dur) var(--ease-out);
+}
+
+.ob-card {
+  position: relative;
+  width: 100%;
+  max-width: 600px;
+  max-height: min(90vh, 720px);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: none;
+  border-radius: var(--radius-l);
+  box-shadow: var(--shadow-3);
+  overflow: hidden;
+  animation: tc-ob-card-in var(--dur) var(--ease-out);
+}
+
+@keyframes tc-ob-overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes tc-ob-card-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.ob-close {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  appearance: none;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--text-subtle);
+  padding: var(--space-2);
+  border-radius: 50%;
+  line-height: 0;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+
+.ob-close:hover {
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.ob-body {
+  padding: var(--space-6) var(--space-6) var(--space-5);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.ob-hero {
+  display: flex;
+  justify-content: center;
+  color: var(--primary);
+  padding: var(--space-4) 0 0;
+}
+
+.ob-hero > svg {
+  box-sizing: content-box;
+  padding: var(--space-4);
+  background: var(--primary-soft);
+  border-radius: 50%;
+}
+
+.ob-step-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--primary);
+}
+
+.ob-step-head > svg {
+  flex: none;
+  box-sizing: content-box;
+  padding: var(--space-2);
+  background: var(--primary-soft);
+  border-radius: 50%;
+}
+
+.ob-step-head .ob-title {
+  margin: 0;
+}
+
+.ob-title {
+  margin: 0;
+  text-align: center;
+  font-size: 1.3rem;
+  color: var(--text);
+}
+
+.ob-step-head .ob-title {
+  text-align: left;
+  font-size: 1.15rem;
+}
+
+.ob-text {
+  margin: 0;
+  color: var(--text);
+  line-height: 1.7;
+}
+
+.ob-text-subtle {
+  color: var(--text-subtle);
+  font-size: 0.9rem;
+}
+
+.ob-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.ob-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.ob-input {
+  font: inherit;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-m);
+  padding: var(--space-2) var(--space-3);
+  min-width: 0;
+  width: 100%;
+  transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+}
+
+.ob-input:hover:not(:focus) {
+  background: var(--surface-3);
+}
+
+.ob-input:focus {
+  outline: 2px solid var(--ring);
+  outline-offset: 0;
+  border-color: transparent;
+}
+
+/* Gentle override so ModelField (styled globally by styles/settings.css'
+   .model-field* classes) sits comfortably inside the wizard's form rhythm
+   without needing its own ob-* variant. */
+.ob-card .model-field select,
+.ob-card .model-field input {
+  font: inherit;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-m);
+  padding: var(--space-2) var(--space-3);
+}
+
+.ob-card .model-field select:focus,
+.ob-card .model-field input:focus {
+  outline: 2px solid var(--ring);
+  outline-offset: 0;
+  border-color: transparent;
+}
+
+.ob-test-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.ob-test-ok {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--success);
+  font-size: 0.9rem;
+}
+
+.ob-error {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--danger);
+}
+
+.ob-btn {
+  appearance: none;
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-5);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text);
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease);
+  align-self: flex-start;
+}
+
+.ob-btn:hover:not(:disabled) {
+  background: var(--surface-2);
+  border-color: var(--text-subtle);
+}
+
+.ob-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ob-btn-accent {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--on-primary);
+  box-shadow: var(--shadow-1);
+}
+
+.ob-btn-accent:hover:not(:disabled) {
+  background: var(--primary-hover);
+  border-color: var(--primary-hover);
+  box-shadow: var(--shadow-2);
+}
+
+/* Inline busy spinner shown inside .ob-btn while a connection test runs. */
+.ob-btn .spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  opacity: 0.7;
+  animation: tc-ob-spin 0.7s linear infinite;
+}
+
+@keyframes tc-ob-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.ob-feature-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.ob-feature-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  line-height: 1.6;
+}
+
+.ob-feature-list li > svg {
+  flex: none;
+  color: var(--primary);
+  background: var(--primary-soft);
+  box-sizing: content-box;
+  padding: 6px;
+  border-radius: 50%;
+}
+
+.ob-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-6) var(--space-5);
+  border-top: 1px solid var(--border);
+}
+
+.ob-dots {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.ob-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--border-strong);
+  transition: background var(--dur-fast) var(--ease), width var(--dur) var(--ease);
+}
+
+.ob-dot.is-active {
+  width: 22px;
+  background: var(--primary);
+}
+
+.ob-footer-actions {
+  display: flex;
+  gap: var(--space-2);
+}

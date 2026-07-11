@@ -1,0 +1,398 @@
+/* ProgramView: creation panel + saved-program list (left) and the TTS
+   player (right). Two-pane grid like articles-view/feed-view; collapses to
+   a single column below 768px. Tokens only — see index.css. */
+
+.program-view {
+  display: grid;
+  grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
+  /* Bounded single row so the two panes below can scroll independently
+     (minmax(0, 1fr), not bare 1fr, whose implicit min is content-sized). */
+  grid-template-rows: minmax(0, 1fr);
+  gap: var(--space-5);
+  height: 100%;
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: var(--space-5);
+  align-items: start;
+}
+
+.program-list-pane {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-width: 0;
+  /* Own scrollbar, independent of the player's (align-self overrides the
+     grid's align-items: start so the pane fills its track). */
+  align-self: stretch;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.program-section-heading {
+  margin: 0 0 var(--space-2);
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.program-section-hint {
+  margin: 0 0 var(--space-4);
+  font-size: 0.8rem;
+  line-height: 1.6;
+  color: var(--text-subtle);
+}
+
+/* --- Create panel --------------------------------------------------------- */
+
+.program-create {
+  padding: var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-l);
+  box-shadow: var(--shadow-1);
+}
+
+.program-articles-empty {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.6;
+  color: var(--text-subtle);
+}
+
+.program-article-picklist {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0 0 var(--space-3);
+  padding: 0;
+  list-style: none;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.program-article-option {
+  padding: var(--space-2);
+  border-radius: var(--radius-s);
+}
+
+.program-article-option:hover {
+  background: var(--surface-2);
+}
+
+.program-article-option-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.program-article-option-title {
+  overflow: hidden;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.program-article-option-time {
+  font-size: 0.72rem;
+  color: var(--text-subtle);
+}
+
+.program-generate-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+
+.program-generate-row .btn {
+  flex-shrink: 0;
+}
+
+.program-selected-count {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.program-generate-error {
+  margin: var(--space-3) 0 0;
+  font-size: 0.8rem;
+  line-height: 1.6;
+  color: var(--danger-text);
+}
+
+/* --- Today's popular programs ("今日の人気番組") --------------------------
+   Reuses reactions.css's .ranking-list/.ranking-row/.ranking-rank rules
+   (daily-ranking pane in SharedView) for the row look, so only the section
+   wrapper needs its own rule here. */
+
+.program-popular {
+  padding: var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-l);
+  box-shadow: var(--shadow-1);
+}
+
+/* --- Audio badge (rendered-podcast indicator) ------------------------------
+   Used both in the player header (larger, standalone) and inline in list-row
+   meta (smaller, alongside the shared badge/other meta text). */
+
+.program-audio-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+/* --- Saved program list ---------------------------------------------------- */
+
+.program-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.program-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  cursor: pointer;
+  transition: box-shadow var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+
+.program-row:hover {
+  border-color: var(--border-strong);
+}
+
+.program-row--active {
+  border-color: var(--primary-border);
+  box-shadow: 0 0 0 2px var(--primary-soft);
+}
+
+.program-row-text {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.program-row-title {
+  overflow: hidden;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.program-row-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: 0.74rem;
+  color: var(--text-subtle);
+}
+
+.program-row-dot {
+  opacity: 0.7;
+}
+
+.program-row-badge {
+  margin-left: var(--space-1);
+}
+
+.program-row-reactions {
+  margin-top: var(--space-1);
+}
+
+/* --- Shared ("みんなの番組") program list ----------------------------------- */
+
+.program-shared {
+  padding: var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-l);
+  box-shadow: var(--shadow-1);
+}
+
+.program-shared-empty {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.6;
+  color: var(--text-subtle);
+}
+
+.program-row--shared {
+  cursor: pointer;
+}
+
+.program-row-author {
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+/* --- Player pane ------------------------------------------------------------ */
+
+.program-player-pane {
+  min-width: 0;
+  /* Own scrollbar, independent of the list's (the former min-height: 60vh
+     is superseded by stretching to the bounded track). */
+  align-self: stretch;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-6);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-l);
+  box-shadow: var(--shadow-1);
+}
+
+.program-player-pane:has(.empty-state) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.program-player {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.program-player-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.program-player-title {
+  font-size: 1.3rem;
+  font-weight: 800;
+  line-height: 1.4;
+  color: var(--text);
+}
+
+.program-player-header-actions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: var(--space-2);
+}
+
+.program-player-subtitle {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-subtle);
+}
+
+.program-player-reactions {
+  padding-bottom: var(--space-1);
+  border-bottom: 1px solid var(--border);
+}
+
+.program-tts-unsupported {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  font-size: 0.82rem;
+  color: var(--text-subtle);
+  background: var(--surface-2);
+  border-radius: var(--radius-m);
+}
+
+/* --- Controls -------------------------------------------------------------- */
+
+.program-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.program-progress {
+  margin-left: auto;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-subtle);
+}
+
+.program-settings-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.program-voice-field,
+.program-rate-field {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+/* --- Script / segment list -------------------------------------------------- */
+
+.program-script {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  /* No inner max-height/overflow: the player pane itself scrolls now, and a
+     nested second scrollbar inside it would fight the pane's (the playing
+     segment's scrollIntoView works the same either way). */
+}
+
+.program-segment {
+  padding: var(--space-3) var(--space-4);
+  font-size: 0.92rem;
+  line-height: 1.75;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border-left: 3px solid transparent;
+  border-radius: 0 var(--radius-s) var(--radius-s) 0;
+  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+
+.program-segment--active {
+  color: var(--text);
+  background: var(--primary-soft);
+  border-left-color: var(--primary);
+}
+
+@media (max-width: 768px) {
+  /* Single column: back to normal page flow — .app-main is the one scroll
+     container again, so the per-pane scrollbars are switched off. */
+  .program-view {
+    display: block;
+    height: auto;
+    padding: var(--space-4);
+  }
+
+  .program-list-pane {
+    margin-bottom: var(--space-5);
+    overflow-y: visible;
+  }
+
+  .program-player-pane {
+    min-height: 0;
+    overflow-y: visible;
+  }
+}

@@ -1,0 +1,92 @@
+/* FeedView layout shell. The home tab is article-first now: a collapsible
+   feed-management sidebar (left), the main column (article grids → global
+   news → new-item inbox), and a generate bar that only mounts while
+   selecting/generating. Section internals live in each component's own css
+   (feedSidebar.css / homeSections.css / feedInbox.css / generateBar.css) —
+   this file owns ONLY the top-level grid and each region's placement, so the
+   grid-column/grid-row/position rules for the region roots are deliberately
+   centralized here and must not be duplicated in the component css files. */
+
+.feed-view {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  /* minmax(0, 1fr) (not bare 1fr, whose implicit min is content-sized) so
+     the main column is viewport-bounded and sidebar/main scroll
+     independently; the generate bar keeps its own auto row and thus stays
+     in view. */
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: var(--space-5);
+  height: 100%;
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: var(--space-5);
+  /* Animated grid-template-columns: the sidebar column glides between the
+     full panel and the slim FAB gutter (supported in all evergreen
+     browsers; older ones just snap). */
+  transition: grid-template-columns 0.25s var(--ease);
+}
+
+/* Sidebar collapsed to just a floating round icon — FeedView toggles this
+   modifier; the FAB's own appearance lives in feedSidebar.css. */
+.feed-view--rail {
+  grid-template-columns: 44px minmax(0, 1fr);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .feed-view {
+    transition: none;
+  }
+}
+
+.feed-view > .feed-sidebar {
+  grid-column: 1;
+  grid-row: 1 / 3;
+}
+
+.feed-main {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+  /* Own scrollbar, independent of the sidebar's; the inbox's sticky filter
+     bar sticks to this box's top edge. */
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.feed-view > .feed-generate-bar {
+  position: sticky;
+  bottom: var(--space-4);
+  grid-column: 2;
+  grid-row: 2;
+}
+
+@media (max-width: 768px) {
+  /* Single column: back to normal page flow — .app-main is the one scroll
+     container again, so the per-pane scrollbars are switched off. The
+     sidebar stays first in source order, but defaults to its collapsed rail
+     so articles remain effectively first on screen. */
+  .feed-view {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto auto;
+    height: auto;
+    padding: var(--space-4);
+  }
+
+  .feed-view > .feed-sidebar {
+    grid-column: 1;
+    grid-row: 1;
+    overflow-y: visible;
+  }
+
+  .feed-main {
+    grid-column: 1;
+    grid-row: 2;
+    overflow-y: visible;
+  }
+
+  .feed-view > .feed-generate-bar {
+    grid-column: 1;
+    grid-row: 3;
+    position: static;
+  }
+}

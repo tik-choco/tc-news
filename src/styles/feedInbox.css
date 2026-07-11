@@ -1,0 +1,296 @@
+/* FeedInbox: collapsible "新着アイテム受信箱" section — the RSS new-item
+   grid + category filter bar, formerly FeedView's main content, now living
+   below the article-first home sections. Self-contained: layout placement
+   of the .feed-inbox root itself is owned by feed.css, not here. */
+
+.feed-inbox {
+  margin-top: var(--space-6);
+}
+
+.feed-inbox-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.feed-inbox-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.feed-inbox-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 1.1rem;
+  padding: 0 var(--space-2);
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--primary);
+  background: var(--primary-soft);
+  border-radius: var(--radius-pill);
+}
+
+.feed-inbox-hint {
+  margin: 0 auto 0 0;
+  font-size: 0.78rem;
+  color: var(--text-subtle);
+}
+
+/* --- Category filter chip row, sticky within the scrolling main column --- */
+
+.feed-filter-bar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-2) 0 var(--space-4);
+  margin-bottom: var(--space-1);
+  background: var(--bg);
+}
+
+.feed-filter-chip {
+  appearance: none;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: var(--space-1) var(--space-4);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease);
+}
+
+.feed-filter-chip:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.feed-filter-chip--active {
+  color: var(--on-primary);
+  background: var(--primary);
+  border-color: var(--primary);
+}
+
+.feed-filter-chip--active:hover {
+  background: var(--primary-hover);
+  color: var(--on-primary);
+}
+
+/* --- New-item grid ------------------------------------------------------- */
+
+/* Expand/collapse: the section body is conditionally rendered (kept simple
+   — collapsed content unmounts, so hidden cards don't keep fetching link
+   previews), so the "animation" on open is just a mount fade+slide rather
+   than a height transition. */
+.feed-inbox-body {
+  animation: feed-inbox-body-in 0.25s var(--ease) both;
+}
+
+@keyframes feed-inbox-body-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.feed-items-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-4);
+}
+
+.feed-item-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  overflow: hidden;
+  cursor: pointer;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-l);
+  box-shadow: var(--shadow-1);
+  transition: box-shadow var(--dur) var(--ease), transform var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
+}
+
+.feed-item-card:hover {
+  box-shadow: var(--shadow-2);
+  transform: translateY(-2px);
+}
+
+.feed-item-card--selected {
+  border-color: var(--primary-border);
+  box-shadow: 0 0 0 2px var(--primary-soft), var(--shadow-2);
+}
+
+/* Card entrance: fades/slides in on mount, with a light stagger driven by
+   --card-index (capped so long grids don't feel slow to settle). Disabled
+   entirely under prefers-reduced-motion below. */
+.feed-item-card {
+  animation: inbox-card-in 0.25s var(--ease) both;
+  animation-delay: calc(min(var(--card-index, 0), 8) * 20ms);
+}
+
+@keyframes inbox-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Optional media (RSS-provided or fetched link preview), spans the full
+   card width above the checkbox+body row. Rendered only when available —
+   no reserved space/skeleton otherwise. */
+.feed-item-media {
+  display: block;
+  width: 100%;
+  height: 140px;
+  object-fit: cover;
+  background: var(--surface-2, var(--surface));
+  border-top-left-radius: var(--radius-l);
+  border-top-right-radius: var(--radius-l);
+}
+
+/* Checkbox + title/meta/summary row, unchanged from the original card
+   layout aside from living under the optional media block now. */
+.feed-item-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.feed-item-card input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin-top: 3px;
+  flex-shrink: 0;
+  accent-color: var(--primary);
+  cursor: pointer;
+  /* デフォルトは非表示(レイアウトは維持)。ホバー/フォーカス/選択中/
+     選択モード中だけ現れる — 「かっこ悪い」フィードバックへの対応。 */
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease);
+}
+
+.feed-item-card:hover input[type="checkbox"],
+.feed-item-card:focus-within input[type="checkbox"],
+.feed-item-card--selected input[type="checkbox"],
+.feed-items-grid--selecting .feed-item-card input[type="checkbox"] {
+  opacity: 1;
+}
+
+/* タッチ端末には:hoverが実質存在しないので、選択モード中/選択済み以外は
+   常に隠す(誤って:hoverが一致してしまうケースを明示的に打ち消す)。 */
+@media (hover: none) {
+  .feed-item-card:hover input[type="checkbox"],
+  .feed-item-card:focus-within input[type="checkbox"] {
+    opacity: 0;
+  }
+
+  .feed-item-card--selected input[type="checkbox"],
+  .feed-items-grid--selecting .feed-item-card input[type="checkbox"] {
+    opacity: 1;
+  }
+}
+
+.feed-item-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.feed-item-title {
+  font-size: 0.92rem;
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--text);
+}
+
+.feed-item-title:hover {
+  color: var(--primary);
+  text-decoration: underline;
+}
+
+.feed-item-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: 0.74rem;
+  color: var(--text-subtle);
+}
+
+.feed-item-dot {
+  opacity: 0.7;
+}
+
+/* "+N" badge for near-duplicate items collapsed into this card (same story,
+   other sources). Neutral pill, distinct from the primary-colored category
+   chip so it doesn't compete for attention. */
+.feed-item-dup {
+  display: inline-flex;
+  align-items: center;
+  height: 1.1rem;
+  padding: 0 var(--space-2);
+  font-size: 0.72rem;
+  color: var(--text-subtle);
+  background: var(--surface-2);
+  border-radius: var(--radius-pill);
+  cursor: help;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+
+.feed-item-summary {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin-top: 2px;
+  font-size: 0.8rem;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+@media (max-width: 768px) {
+  .feed-inbox-hint {
+    display: none;
+  }
+}
+
+/* すべてのアニメーション演出はここで一括無効化。checkbox opacity自体は
+   状態表現(選択/選択モード)なので消さず、遷移時間だけゼロにする。 */
+@media (prefers-reduced-motion: reduce) {
+  .feed-item-card,
+  .feed-inbox-body {
+    animation: none;
+  }
+
+  .feed-item-card,
+  .feed-item-card input[type="checkbox"],
+  .feed-item-dup,
+  .feed-inbox .btn.btn-ghost.btn-small {
+    transition: none;
+  }
+}

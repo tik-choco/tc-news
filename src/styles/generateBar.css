@@ -1,0 +1,118 @@
+/* GenerateBar: selection→article generate bar's own appearance. Placement
+   (position/sticky/grid-column/grid-row) is owned by the parent view's
+   layout stylesheet (feed.css), not here. */
+
+.feed-generate-bar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-l);
+  box-shadow: var(--shadow-3);
+}
+
+.feed-generate-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.feed-generate-count {
+  flex-shrink: 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--primary);
+  white-space: nowrap;
+}
+
+.feed-generate-instruction {
+  flex: 1;
+  min-width: 0;
+}
+
+.feed-generate-error {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--danger-text);
+}
+
+.feed-generate-preview {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  max-height: 8rem;
+  padding: var(--space-3);
+  overflow-y: auto;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border-radius: var(--radius-m);
+}
+
+.feed-generate-preview svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.feed-generate-preview pre {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--mono);
+  font-size: 0.76rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 768px) {
+  .feed-generate-row {
+    flex-wrap: wrap;
+  }
+
+  .feed-generate-instruction {
+    flex-basis: 100%;
+    order: 3;
+  }
+}
+
+/* --- Motion: mount / content-in animations ------------------------------ */
+
+.feed-generate-bar {
+  animation: genbar-in 0.25s var(--ease);
+}
+
+.feed-generate-preview {
+  animation: genbar-fade-in 0.2s var(--ease);
+}
+
+.feed-generate-error {
+  animation: genbar-fade-in 0.2s var(--ease);
+}
+
+@keyframes genbar-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes genbar-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .feed-generate-bar,
+  .feed-generate-preview,
+  .feed-generate-error {
+    animation: none;
+  }
+}
