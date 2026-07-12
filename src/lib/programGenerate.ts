@@ -5,7 +5,12 @@
 // unlike generate.ts, any failure here (the LLM call itself, or a malformed/
 // empty reply) is surfaced as a single Error via tGlobal("program.
 // generateFailed", { detail }) so the caller only has one failure path to
-// handle.
+// handle. If the main JSON reply is missing a usable title, a second,
+// lightweight plain-text LLM call (generateProgramTitle) is made to derive
+// one from the generated script; failures of that second call (or of the
+// title-generation call itself) never fail the overall generation — they
+// just fall through to deriveFallbackTitle, which picks the first article's
+// title, or finally tGlobal("program.untitledProgram").
 
 import type { ChatMessage } from "@tik-choco/mistai";
 import type { NewsArticle, ProgramSegment, RadioProgram } from "../types";
@@ -91,6 +96,60 @@ function newProgramId(): string {
   }
 }
 
+const TITLE_USER_EXCERPT_CHARS = 1200;
+
+// System prompt for the lightweight title-only fallback call: asks for a
+// single plain-text line rather than JSON, since all we need here is a
+// title, not a full script.
+function buildTitleSystemPrompt(language: string): string {
+  return (
+    "You are given the narration script of a radio news program. Reply with ONLY a single " +
+    "concise program title for it, on one line. Do not use quotes, markdown, or any " +
+    `explanation — just the title text, written in ${language}.`
+  );
+}
+
+// Best-effort title generation from an already-produced script, used when
+// the main JSON reply omits a title. Never throws: any failure (the LLM
+// call rejecting, or the reply normalizing to nothing usable) resolves to
+// "" so the caller can fall back further.
+export async function generateProgramTitle(
+  segments: ProgramSegment[],
+  options: { profileId: string; language: string },
+): Promise<string> {
+  try {
+    const joined = segments.map((s) => s.text).join("\n\n");
+    const userContent = joined.slice(0, TITLE_USER_EXCERPT_CHARS);
+
+    const messages: ChatMessage[] = [
+      { role: "system", content: buildTitleSystemPrompt(options.language) },
+      { role: "user", content: userContent },
+    ];
+
+    const responseText = await requestChatCompletion(options.profileId, messages);
+
+    const firstLine = responseText.split("\n").find((line) => line.trim().length > 0) ?? "";
+    const title = firstLine
+      .trim()
+      .replace(/^#+\s*/, "")
+      .replace(/^["'「」『』]+/, "")
+      .replace(/["'「」『』]+$/, "");
+    return stripRuby(title).trim().slice(0, 80);
+  } catch {
+    return "";
+  }
+}
+
+// Fallback used when neither the main JSON reply nor generateProgramTitle
+// produced a usable title: reuse the first selected article's own title.
+export function deriveFallbackTitle(articles: NewsArticle[]): string {
+  for (const article of articles) {
+    const trimmed = article.title.trim();
+    if (trimmed) return trimmed.slice(0, 80);
+  }
+  return tGlobal("program.untitledProgram");
+}
+
 export interface GenerateProgramOptions {
   profileId: string;
   /** Endonym of the target language for the generated script, e.g. "English". */
@@ -141,7 +200,14 @@ export async function generateProgram(
     }
 
     const rawTitle = typeof data.title === "string" ? data.title.trim() : "";
-    const title = rawTitle ? stripRuby(rawTitle) : tGlobal("program.untitledProgram");
+    let title = rawTitle ? stripRuby(rawTitle) : "";
+    if (!title) {
+      title = await generateProgramTitle(segments, {
+        profileId: options.profileId,
+        language: options.language,
+      });
+    }
+    if (!title) title = deriveFallbackTitle(articles);
 
     const articlesById = new Map(articles.map((a) => [a.id, a]));
     const segmentImageUrl = segments
