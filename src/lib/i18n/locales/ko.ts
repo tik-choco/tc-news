@@ -182,6 +182,8 @@ export const ko: Messages = {
     corsProxyHint: "직접 가져올 수 없는 피드를 위한 중계 주소입니다. 피드 URL을 끝에 붙여 호출합니다.",
     refreshInterval: "자동 새로고침 간격(분, 0이면 비활성화)",
     autoGenerate: "새 항목이 3건 이상 쌓이면 자동으로 기사를 생성합니다",
+    programRuby: "프로그램 대본에 후리가나(루비)를 답니다",
+    programRubyHint: "스튜디오에서 생성하는 대본의 한자 등에 후리가나(루비)를 표시합니다. 음성 낭독에는 영향을 주지 않습니다.",
     globalShareLabel: "글로벌에도 배포",
     globalShareDesc: "룸에 공유할 때, 모두가 참여하는 글로벌 룸에도 기사를 배포합니다.",
     showMediaPreviews: "썸네일·링크 미리보기 표시",

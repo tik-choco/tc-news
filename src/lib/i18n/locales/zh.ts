@@ -181,6 +181,8 @@ export const zh: Messages = {
     corsProxyHint: "用于无法直接获取的订阅源的中继地址，会在其末尾附加订阅源网址后调用。",
     refreshInterval: "自动刷新间隔(分钟，0 为禁用)",
     autoGenerate: "新文章累计达到3篇以上时自动生成文章",
+    programRuby: "为节目台词标注注音假名(振假名)",
+    programRubyHint: "为演播室生成的台词中的汉字等标注注音假名(振假名)。不影响朗读音频。",
     globalShareLabel: "同时发布到全局",
     globalShareDesc: "分享到房间时，同时将文章发布到所有人都能看到的全局房间。",
     showMediaPreviews: "显示缩略图和链接预览",

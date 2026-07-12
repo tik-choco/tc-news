@@ -186,6 +186,9 @@ export const es: Messages = {
       "Retransmisión para fuentes que no se pueden obtener directamente. La URL de la fuente se añade al final.",
     refreshInterval: "Intervalo de actualización automática (minutos, 0 para desactivar)",
     autoGenerate: "Generar un artículo automáticamente al acumular 3 o más elementos nuevos",
+    programRuby: "Añadir furigana (ruby) a los guiones de los programas",
+    programRubyHint:
+      "Muestra las lecturas furigana sobre los kanji en los guiones generados en el estudio. No afecta al audio narrado.",
     globalShareLabel: "Publicar también globalmente",
     globalShareDesc:
       "Al compartir en tu sala, también publica el artículo en la sala global que todos pueden leer.",
