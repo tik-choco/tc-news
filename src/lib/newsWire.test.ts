@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
-import { sanitizeSharedProgram } from "./newsWire";
+import { beforeEach, describe, expect, it } from "vitest";
+import { appendProgramLog, loadProgramLog, sanitizeSharedProgram } from "./newsWire";
+import type { ProgramWire } from "./newsWire";
 
 function baseWireProgram(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -96,5 +97,96 @@ describe("sanitizeSharedProgram", () => {
 
   it("returns null when segments are empty", () => {
     expect(sanitizeSharedProgram(baseWireProgram({ segments: [] }))).toBeNull();
+  });
+});
+
+function makeProgramWire(overrides: Partial<ProgramWire> = {}): ProgramWire {
+  return {
+    type: "tc-news:program",
+    id: "program-1",
+    fromId: "did:key:alice",
+    fromName: "Alice",
+    timestamp: Date.now(),
+    cid: "cid-1",
+    signature: "sig-1",
+    ...overrides,
+  };
+}
+
+describe("loadProgramLog / appendProgramLog", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it("returns an empty array when the key is unset", () => {
+    expect(loadProgramLog("room-1")).toEqual([]);
+  });
+
+  it("round-trips a wire through append then load, preserving all fields", () => {
+    const wire = makeProgramWire({ fromApp: "tc-news" });
+    appendProgramLog("room-1", wire);
+    expect(loadProgramLog("room-1")).toEqual([wire]);
+  });
+
+  it("round-trips a wire without fromApp", () => {
+    const wire = makeProgramWire();
+    delete wire.fromApp;
+    appendProgramLog("room-1", wire);
+    const loaded = loadProgramLog("room-1");
+    expect(loaded).toHaveLength(1);
+    expect(loaded[0]).toEqual(wire);
+    expect(loaded[0].fromApp).toBeUndefined();
+  });
+
+  it("dedupes by wire.id: a later append with the same id is dropped, first wins", () => {
+    const first = makeProgramWire({ id: "dup-1", fromName: "Alice" });
+    const second = makeProgramWire({ id: "dup-1", fromName: "Bob" });
+    appendProgramLog("room-1", first);
+    appendProgramLog("room-1", second);
+    const loaded = loadProgramLog("room-1");
+    expect(loaded).toHaveLength(1);
+    expect(loaded[0].fromName).toBe("Alice");
+  });
+
+  it("keeps at most 100 entries, dropping the oldest when a 101st is appended", () => {
+    for (let i = 0; i < 101; i++) {
+      appendProgramLog("room-1", makeProgramWire({ id: `program-${i}` }));
+    }
+    const loaded = loadProgramLog("room-1");
+    expect(loaded).toHaveLength(100);
+    expect(loaded.some((w) => w.id === "program-0")).toBe(false);
+    expect(loaded.some((w) => w.id === "program-1")).toBe(true);
+    expect(loaded.some((w) => w.id === "program-100")).toBe(true);
+  });
+
+  it("returns an empty array when localStorage holds malformed JSON", () => {
+    localStorage.setItem("tc-news:programlog:room-1", "{not valid json");
+    expect(loadProgramLog("room-1")).toEqual([]);
+  });
+
+  it("returns an empty array when the stored JSON is not an array", () => {
+    localStorage.setItem("tc-news:programlog:room-1", JSON.stringify({ not: "an array" }));
+    expect(loadProgramLog("room-1")).toEqual([]);
+  });
+
+  it("filters out non-wire garbage elements while keeping valid wires", () => {
+    const valid = makeProgramWire({ id: "valid-1" });
+    const garbage: unknown[] = [
+      null,
+      { type: "tc-news:article", id: "wrong-type" }, // wrong type
+      { type: "tc-news:program", id: "missing-fields" }, // missing required fields
+      valid,
+    ];
+    localStorage.setItem("tc-news:programlog:room-1", JSON.stringify(garbage));
+    const loaded = loadProgramLog("room-1");
+    expect(loaded).toHaveLength(1);
+    expect(loaded[0]).toEqual(valid);
+  });
+
+  it("keeps logs independent across different roomIds", () => {
+    appendProgramLog("room-a", makeProgramWire({ id: "a-1" }));
+    appendProgramLog("room-b", makeProgramWire({ id: "b-1" }));
+    expect(loadProgramLog("room-a").map((w) => w.id)).toEqual(["a-1"]);
+    expect(loadProgramLog("room-b").map((w) => w.id)).toEqual(["b-1"]);
   });
 });

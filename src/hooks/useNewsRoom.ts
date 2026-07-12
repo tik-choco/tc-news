@@ -17,10 +17,12 @@ import {
 import { ensureDidIdentity } from "../crypto/didIdentity";
 import { signWireFields, verifyWire } from "../lib/wireSign";
 import {
+  appendProgramLog,
   appendReactionLog,
   appendWireLog,
   isProgramWire,
   isReactionWire,
+  loadProgramLog,
   loadReactionLog,
   loadSharedArticles,
   loadSharedPrograms,
@@ -44,6 +46,10 @@ import { REACTION_KINDS, type NewsArticle, type RadioProgram, type ReactionKind 
 // history-request (e.g. on repeated reconnects) only gets replayed to once
 // per window, so a flaky link can't trigger a replay storm.
 const HISTORY_ANSWER_THROTTLE_MS = 60_000;
+// Per-peer throttle for the *re-request* sent on EVENT_PEER_CONNECTED (see
+// below): distinct from HISTORY_ANSWER_THROTTLE_MS, which throttles us
+// answering others' requests. This throttles us asking the same peer again.
+const HISTORY_REREQUEST_THROTTLE_MS = 60_000;
 // Ask once shortly after the room finishes joining, giving the article
 // subscriber above time to mount so replayed wires aren't missed.
 const HISTORY_REQUEST_DELAY_MS = 700;
@@ -179,6 +185,9 @@ export function useNewsRoom(roomId: string, userName: string, enabled = true) {
     // swarm.
     const channelId = roomId;
     const answeredAt = new Map<string, number>();
+    // Per-peer throttle for the targeted history re-request sent on
+    // EVENT_PEER_CONNECTED (see below).
+    const requestedAt = new Map<string, number>();
 
     function commitSharedArticles(next: NewsArticle[]) {
       sharedArticlesRef.current = next;
@@ -247,11 +256,10 @@ export function useNewsRoom(roomId: string, userName: string, enabled = true) {
     }
 
     // Program wires mirror hydrateArticle's CID fetch + authorDid==fromId
-    // check, but are intentionally NOT appended to the article wireLog:
-    // newsWire.ts's NewsWire union (and thus appendWireLog/loadWireLog)
-    // deliberately excludes ProgramWire (see its header comment), so programs
-    // reach live listeners only and are persisted per-receiver via
-    // saveSharedPrograms — they are not replayed to history requesters.
+    // check. They're excluded from newsWire.ts's NewsWire union (and thus
+    // appendWireLog/loadWireLog — see that file's header comment), but they
+    // do get their own dedicated replay log (loadProgramLog/appendProgramLog)
+    // so late joiners still receive them via replayHistoryTo below.
     async function hydrateProgram(wire: ProgramWire) {
       try {
         if (sharedProgramsRef.current.some((p) => p.id === wire.id)) return; // duplicate, ignore
@@ -259,6 +267,7 @@ export function useNewsRoom(roomId: string, userName: string, enabled = true) {
           console.warn("discarding program wire with invalid signature", wire.id);
           return;
         }
+        appendProgramLog(roomId, wire);
         const bytes = await storage_get(wire.cid);
         if (cancelled) return;
         const candidate = sanitizeSharedProgram(JSON.parse(new TextDecoder().decode(bytes)));
@@ -312,7 +321,12 @@ export function useNewsRoom(roomId: string, userName: string, enabled = true) {
       // same staggered replay: the reaction indices continue after the wire
       // log's so the two logs don't burst onto the link at the same time.
       const reactionLog = loadReactionLog(roomId);
-      if (log.length === 0 && reactionLog.length === 0) return;
+      // Program wires also live in their own log (see hydrateProgram above)
+      // and ride the same staggered replay, continuing after both the wire
+      // log and reaction log so none of the three bursts onto the link at
+      // once.
+      const programLog = loadProgramLog(roomId);
+      if (log.length === 0 && reactionLog.length === 0 && programLog.length === 0) return;
       getNode().then((node) => {
         log.forEach((wire, index) => {
           setTimeout(() => {
@@ -325,6 +339,12 @@ export function useNewsRoom(roomId: string, userName: string, enabled = true) {
             if (cancelled) return;
             node.sendMessage(requesterId, wire, DELIVERY_RELIABLE, channelId);
           }, (log.length + index) * REPLAY_STAGGER_MS);
+        });
+        programLog.forEach((wire, index) => {
+          setTimeout(() => {
+            if (cancelled) return;
+            node.sendMessage(requesterId, wire, DELIVERY_RELIABLE, channelId);
+          }, (log.length + reactionLog.length + index) * REPLAY_STAGGER_MS);
         });
       });
     }
@@ -357,6 +377,35 @@ export function useNewsRoom(roomId: string, userName: string, enabled = true) {
         // (conservative: not narrowing scope without a confirmed room field).
         peerIds.add(fromId);
         setPeers(peerIds.size);
+        // Also re-send a *targeted* history-request to this newly-connected
+        // peer: the original broadcast (700ms after join, below) can fire
+        // before any peer connection exists, in which case it reaches no
+        // one and is never retried. Since EVENT_PEER_CONNECTED is node-wide
+        // rather than room-scoped (see comment above), this may fire for
+        // peers outside this room too — harmless, since the receiver's
+        // evtRoomId filter above discards traffic for other rooms.
+        {
+          const now = Date.now();
+          if (now - (requestedAt.get(fromId) ?? 0) >= HISTORY_REREQUEST_THROTTLE_MS) {
+            requestedAt.set(fromId, now);
+            ensureDidIdentity()
+              .then((id) => {
+                if (cancelled) return;
+                const request: HistoryRequestWire = {
+                  type: "tc-news:history-request",
+                  fromId: id.did,
+                  timestamp: Date.now(),
+                };
+                getNode()
+                  .then((node) => {
+                    if (cancelled) return;
+                    node.sendMessage(fromId, request, DELIVERY_RELIABLE, channelId);
+                  })
+                  .catch((err) => console.error("failed to send targeted history request", err));
+              })
+              .catch((err) => console.error("failed to send targeted history request", err));
+          }
+        }
       } else if (eventType === EVENT_PEER_DISCONNECTED) {
         peerIds.delete(fromId);
         setPeers(peerIds.size);
@@ -473,9 +522,10 @@ export function useNewsRoom(roomId: string, userName: string, enabled = true) {
   // Mirrors share(): the full RadioProgram JSON is content-addressed via
   // storage_add and only CID + metadata travel on the signed wire. The
   // stamped copy (authorDid/authorName/shared) is what gets CID'd, so the
-  // receiver's authorDid===fromId check can pass. Note: no appendWireLog —
-  // program wires are excluded from the article wireLog by design (see
-  // hydrateProgram above), so programs are not replayed to late joiners.
+  // receiver's authorDid===fromId check can pass. Program wires are excluded
+  // from the article wireLog by design (see hydrateProgram above), but are
+  // appended to the dedicated programLog (appendProgramLog, symmetric with
+  // share()'s appendWireLog) so they're replayed to late joiners too.
   async function shareProgram(program: RadioProgram): Promise<RadioProgram> {
     const node = await getNode();
     const identity = await ensureDidIdentity();
@@ -497,6 +547,7 @@ export function useNewsRoom(roomId: string, userName: string, enabled = true) {
     };
     const wire: ProgramWire = { ...unsigned, signature: await signWireFields(unsigned) };
     node.sendMessage(null, wire, DELIVERY_RELIABLE, roomIdRef.current);
+    appendProgramLog(roomIdRef.current, wire);
     const next = [stamped, ...sharedProgramsRef.current.filter((p) => p.id !== program.id)];
     sharedProgramsRef.current = next;
     saveSharedPrograms(roomIdRef.current, next);
