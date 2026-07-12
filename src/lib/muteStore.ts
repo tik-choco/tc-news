@@ -3,15 +3,13 @@
 // articles from the UI by default (see SharedView's collapsed-row toggle).
 // Same defensive-parsing shape as the rest of tc-news's localStorage modules.
 
+import { safeSetItem } from "./safeStorage";
+
 const MUTED_DIDS_KEY = "tc-news:muted-dids"; // string[](DID)
 const MAX_MUTED_DIDS = 200;
 
 function persist(dids: string[]): void {
-  try {
-    localStorage.setItem(MUTED_DIDS_KEY, JSON.stringify(dids));
-  } catch (error) {
-    console.warn("tc-news: failed to persist muted dids", error);
-  }
+  safeSetItem(MUTED_DIDS_KEY, JSON.stringify(dids));
 }
 
 /** ミュート中のDID一覧を返す。壊れたstorageは空配列扱い。 */

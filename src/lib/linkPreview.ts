@@ -1,11 +1,14 @@
 // OGP (Open Graph) link-preview fetching, parsing, and caching for the
 // "URL card" mechanism — turning a plain article link into a title/image
 // card the way chat apps do. Fetched HTML pages are parsed client-side (no
-// server-side scraping service), cached in localStorage to avoid re-fetching
-// the same URL across sessions, and rate-limited so a feed view with dozens
-// of links doesn't fire dozens of simultaneous requests.
+// server-side scraping service), cached via kvStore (mist KV, OPFS-backed;
+// localStorage only as a pre-hydration/fallback path — see kvStore.ts's
+// module header) to avoid re-fetching the same URL across sessions, and
+// rate-limited so a feed view with dozens of links doesn't fire dozens of
+// simultaneous requests.
 import type { AppSettings } from "../types";
 import { loadAppSettings } from "./appSettings";
+import { kvGetSync, kvSetSync } from "./kvStore";
 
 export interface LinkPreview {
   url: string; // the page URL this preview is for
@@ -114,7 +117,7 @@ export function mediaPreviewsEnabled(): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Cache (localStorage-backed, in-memory mirrored)
+// Cache (kvStore-backed, in-memory mirrored)
 // ---------------------------------------------------------------------------
 
 const CACHE_KEY = "tc-news:link-previews";
@@ -128,14 +131,14 @@ interface CacheEntry {
 }
 
 // In-memory mirror so repeated synchronous getCachedLinkPreview() calls
-// (e.g. from render loops) don't re-parse the localStorage JSON blob each
-// time. Lazily populated on first access.
+// (e.g. from render loops) don't re-parse the cached JSON blob each time.
+// Lazily populated on first access.
 let memoryCache: Record<string, CacheEntry> | null = null;
 
 function loadCache(): Record<string, CacheEntry> {
   if (memoryCache) return memoryCache;
   try {
-    const raw = localStorage.getItem(CACHE_KEY);
+    const raw = kvGetSync(CACHE_KEY);
     const parsed: unknown = raw ? JSON.parse(raw) : null;
     memoryCache = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, CacheEntry>) : {};
   } catch {
@@ -153,12 +156,9 @@ function saveCache(cache: Record<string, CacheEntry>): void {
     toPersist = Object.fromEntries(entries.slice(0, MAX_CACHE_ENTRIES));
   }
   memoryCache = toPersist;
-  try {
-    localStorage.setItem(CACHE_KEY, JSON.stringify(toPersist));
-  } catch {
-    // Quota exceeded or storage unavailable (private mode) — degrade to
-    // in-memory only; memoryCache above still keeps this session fast.
-  }
+  // kvSetSync never throws; a dropped/fallback write degrades to
+  // in-memory only — memoryCache above still keeps this session fast.
+  kvSetSync(CACHE_KEY, JSON.stringify(toPersist));
 }
 
 function isFresh(entry: CacheEntry, now: number): boolean {

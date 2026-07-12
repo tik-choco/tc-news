@@ -2,6 +2,7 @@
 // follow the OS `prefers-color-scheme` by default). The choice is applied as a
 // `data-theme` attribute on <html> and persisted so it survives reloads.
 import { useEffect, useState } from "preact/hooks";
+import { safeSetItem } from "../lib/safeStorage";
 
 export type Theme = "light" | "dark";
 
@@ -16,7 +17,7 @@ export function useTheme(): { theme: Theme; toggleTheme(): void } {
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    localStorage.setItem(THEME_KEY, theme);
+    safeSetItem(THEME_KEY, theme);
   }, [theme]);
 
   function toggleTheme() {

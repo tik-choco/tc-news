@@ -36,6 +36,7 @@ import { formatRelativeTime } from "../components/ArticleCard";
 import { LOCALE_LABELS, useLocale, useT } from "../lib/i18n";
 import { mediaPreviewsEnabled } from "../lib/linkPreview";
 import { addProgram, loadPrograms, removeProgram, upsertProgram } from "../lib/programStore";
+import { subscribeKvHydrated } from "../lib/kvStore";
 import { generateProgram } from "../lib/programGenerate";
 import { activeTtsEngine, isTtsSupported, listVoices, pickDefaultVoice } from "../lib/tts";
 import { downloadProgramAudio, renderProgramAudio } from "../lib/programAudio";
@@ -111,6 +112,22 @@ export function ProgramView(props: {
     lastDeepLinkRef.current = deepLinkId ?? null;
     if (deepLinkId) setSelectedProgramId(deepLinkId);
   }, [deepLinkId]);
+
+  // `programs`/`selectedProgramId` above were seeded from loadPrograms()
+  // before the mist KV finished hydrating (lib/kvStore.ts) — pre-hydration
+  // reads fall back to localStorage, which is empty once a previous session
+  // migrated its data into the KV. Re-read once hydration replaces that
+  // fallback; only default-select the first program if the user hasn't
+  // already picked one (e.g. via deepLinkId) in the meantime.
+  useEffect(
+    () =>
+      subscribeKvHydrated(() => {
+        const hydrated = loadPrograms();
+        setPrograms(hydrated);
+        setSelectedProgramId((prev) => prev ?? hydrated[0]?.id ?? null);
+      }),
+    [],
+  );
 
   const [selectedArticleIds, setSelectedArticleIds] = useState<Set<string>>(() => new Set());
   const [generating, setGenerating] = useState(false);

@@ -325,11 +325,16 @@ async function tryFetchText(url: string): Promise<string> {
 export async function fetchFeedItems(source: FeedSource, corsProxy: string): Promise<FeedItem[]> {
   let xml: string | null = null;
   let lastError: unknown = null;
+  // TypeError is what fetch() throws for network-layer failures (a CORS
+  // rejection or being offline) — as opposed to the `Error("HTTP …")` that
+  // tryFetchText throws for a non-2xx response, which no proxy can fix.
+  let directFailedAsNetworkError = false;
 
   try {
     xml = await tryFetchText(source.url);
   } catch (err) {
     lastError = err;
+    directFailedAsNetworkError = err instanceof TypeError;
   }
 
   if (xml === null && corsProxy) {
@@ -341,6 +346,13 @@ export async function fetchFeedItems(source: FeedSource, corsProxy: string): Pro
   }
 
   if (xml === null) {
+    // Direct fetch failed at the network layer and there's no proxy
+    // configured to retry through: this is a permanent CORS dead end, not a
+    // transient failure, so point the user at the fix instead of the raw
+    // (unhelpful, unclearable) network error message.
+    if (directFailedAsNetworkError && !corsProxy) {
+      throw new Error(tGlobal("errors.feedFetchNoCorsProxy", { label: source.label || source.url }));
+    }
     const detail = lastError instanceof Error ? lastError.message : String(lastError);
     throw new Error(tGlobal("errors.feedFetchFailed", { label: source.label || source.url, detail }));
   }

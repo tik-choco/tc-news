@@ -27,6 +27,8 @@
 // has no per-app placeholder to substitute: the vendored copy is
 // byte-identical everywhere.
 
+import { safeSetItem } from "./safeStorage";
+
 export const LLM_CONFIG_KEY = "tc-shared-llm-config-v1";
 export const LLM_CONFIG_VERSION = 1;
 
@@ -201,11 +203,7 @@ export function loadLlmConfig(): SharedLlmConfigV1 | null {
  */
 export function saveLlmConfig(config: SharedLlmConfigV1): void {
   config.updatedAt = new Date().toISOString();
-  try {
-    localStorage.setItem(LLM_CONFIG_KEY, JSON.stringify(config));
-  } catch (error) {
-    console.warn("tc-shared-llm-config: failed to persist config", error);
-  }
+  safeSetItem(LLM_CONFIG_KEY, JSON.stringify(config));
 }
 
 /**

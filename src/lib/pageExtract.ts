@@ -33,6 +33,7 @@
 import DOMPurify from "dompurify";
 import type { AppSettings } from "../types";
 import { loadAppSettings } from "./appSettings";
+import { kvGetSync, kvSetSync } from "./kvStore";
 
 export interface ExtractedPage {
   url: string;
@@ -77,7 +78,7 @@ const MIN_PARAGRAPH_TEXT = 300;
 
 // Rough cap on the sanitized output size. Extracted articles are rendered
 // inline in a modal, not paginated, so an unbounded page (a "best of 2024"
-// listicle, a live-blog) could otherwise balloon localStorage and the DOM.
+// listicle, a live-blog) could otherwise balloon storage and the DOM.
 const MAX_OUTPUT_CHARS = 150_000;
 
 const ALLOWED_TAGS = [
@@ -239,20 +240,41 @@ export function extractReadableHtml(rawHtml: string, baseUrl: string): string | 
 }
 
 // ---------------------------------------------------------------------------
-// Cache (localStorage-backed, in-memory mirrored) — mirrors linkPreview.ts's
-// cache shape. Positive results are small in count but individually large
-// (full article HTML), hence the much smaller MAX_CACHE_ENTRIES than
-// link-previews get. Negative results (fetch failed, or the page had no
-// extractable article) are cached in-memory only for the session: they're
-// cheap to recompute and not worth risking localStorage quota on.
+// Cache (persisted via kvStore — mist KV, OPFS-backed; localStorage only as
+// a pre-hydration/fallback path, see kvStore.ts's module header — with an
+// in-memory mirror) — mirrors linkPreview.ts's cache shape. Positive results
+// are small in count but individually large (full article HTML), hence the
+// much smaller MAX_CACHE_ENTRIES than link-previews get. Negative results
+// (fetch failed, or the page had no extractable article) are cached
+// in-memory only for the session: they're cheap to recompute and not worth
+// persisting.
+//
+// Persistence is deliberately narrower than the in-memory mirror, and this
+// narrowing is kept post-migration as a safety net against the mist KV's
+// ~1MiB per-value limit (see kvStore.ts). A single extracted article can be
+// up to MAX_OUTPUT_CHARS (150,000) characters, so this cache alone at its
+// old cap (30 entries × 150K chars) could reach ~4.5M characters (~9MB in
+// UTF-16) — far past that limit. The in-memory mirror above still keeps all
+// MAX_CACHE_ENTRIES entries (so within-session behavior — repeat opens of
+// the same article during this visit — is unchanged), but only "small
+// enough" entries are written through to the KV: PERSIST_MAX_HTML_CHARS
+// caps the per-entry HTML size and PERSIST_MAX_ENTRIES caps how many
+// entries persist. Entries that don't qualify simply aren't durable across
+// reloads — the next fetchReadablePage() call for that URL re-fetches and
+// re-extracts it, which is slower but not incorrect (no stale/wrong content
+// is ever served). Worst case persisted size: PERSIST_MAX_ENTRIES (10) ×
+// PERSIST_MAX_HTML_CHARS (20,000) = 200,000 chars ≈ 400KB (UTF-16) — well
+// under the KV's soft limit.
 // ---------------------------------------------------------------------------
 
 const CACHE_KEY = "tc-news:page-extracts";
 const MAX_CACHE_ENTRIES = 30;
+const PERSIST_MAX_ENTRIES = 10;
+const PERSIST_MAX_HTML_CHARS = 20_000;
 const TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const NEGATIVE_TTL_MS = 24 * 60 * 60 * 1000; // 1 day, in-memory only
 
-interface CacheEntry {
+export interface CacheEntry {
   html: string;
   at: number;
 }
@@ -263,13 +285,25 @@ const negativeCache = new Map<string, number>(); // url -> cached-at
 function loadCache(): Record<string, CacheEntry> {
   if (memoryCache) return memoryCache;
   try {
-    const raw = localStorage.getItem(CACHE_KEY);
+    const raw = kvGetSync(CACHE_KEY);
     const parsed: unknown = raw ? JSON.parse(raw) : null;
     memoryCache = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, CacheEntry>) : {};
   } catch {
     memoryCache = {};
   }
   return memoryCache;
+}
+
+/** Picks the subset of `cache` allowed to be persisted (written through to
+ * the KV store): only entries whose HTML is small enough
+ * (PERSIST_MAX_HTML_CHARS), capped to the most recent PERSIST_MAX_ENTRIES.
+ * Exported for tests. */
+export function selectPersistableEntries(cache: Record<string, CacheEntry>): Record<string, CacheEntry> {
+  const persistable = Object.entries(cache)
+    .filter(([, entry]) => entry.html.length <= PERSIST_MAX_HTML_CHARS)
+    .sort((a, b) => b[1].at - a[1].at)
+    .slice(0, PERSIST_MAX_ENTRIES);
+  return Object.fromEntries(persistable);
 }
 
 function saveCache(cache: Record<string, CacheEntry>): void {
@@ -281,13 +315,12 @@ function saveCache(cache: Record<string, CacheEntry>): void {
     toPersist = Object.fromEntries(entries.slice(0, MAX_CACHE_ENTRIES));
   }
   memoryCache = toPersist;
-  try {
-    localStorage.setItem(CACHE_KEY, JSON.stringify(toPersist));
-  } catch {
-    // Quota exceeded (extracted article HTML is large) or storage
-    // unavailable (private mode) — degrade to in-memory only; memoryCache
-    // above still keeps this session fast.
-  }
+  // Persisted subset is narrower than the in-memory mirror — see the module
+  // header comment above. kvSetSync never throws; if the backend write is
+  // dropped (or the fallback write hits a full quota) this degrades to
+  // in-memory-only, which is fine since memoryCache above already keeps
+  // this session fast regardless.
+  kvSetSync(CACHE_KEY, JSON.stringify(selectPersistableEntries(toPersist)));
 }
 
 function getFreshEntry(url: string): CacheEntry | undefined {

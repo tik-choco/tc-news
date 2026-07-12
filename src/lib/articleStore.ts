@@ -4,9 +4,13 @@
 // type, invalid entries dropped rather than crashing the app.
 
 import type { NewsArticle, SourceLink } from "../types";
+import { kvGetSync, kvSetSync, KV_VALUE_SOFT_LIMIT_BYTES, utf8ByteLength } from "./kvStore";
 
 const ARTICLES_KEY = "tc-news:articles";
 const MAX_ARTICLES = 200;
+/** Floor for the halve-and-retry trim in persist() below — mirrors
+ * feedStore.ts's MIN_FEED_ITEMS. */
+const MIN_ARTICLES = 50;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
@@ -51,18 +55,25 @@ function sanitizeArticle(value: unknown): NewsArticle | null {
   return article;
 }
 
+/** Persists articles (expected createdAt-descending), capped at MAX_ARTICLES.
+ * If the serialized blob is still over the mist KV's soft limit
+ * (lib/kvStore.ts) after that cap, degrade by halving the count and
+ * re-measuring, down to MIN_ARTICLES — since the array is newest-first this
+ * drops the oldest articles first. */
 function persist(articles: NewsArticle[]): void {
-  try {
-    localStorage.setItem(ARTICLES_KEY, JSON.stringify(articles.slice(0, MAX_ARTICLES)));
-  } catch (error) {
-    console.warn("tc-news: failed to persist articles", error);
+  let toSave = articles.slice(0, MAX_ARTICLES);
+  let serialized = JSON.stringify(toSave);
+  while (utf8ByteLength(serialized) > KV_VALUE_SOFT_LIMIT_BYTES && toSave.length > MIN_ARTICLES) {
+    toSave = toSave.slice(0, Math.max(MIN_ARTICLES, Math.floor(toSave.length / 2)));
+    serialized = JSON.stringify(toSave);
   }
+  kvSetSync(ARTICLES_KEY, serialized);
 }
 
 /** createdAt 降順で自分の生成記事を返す。 */
 export function loadMyArticles(): NewsArticle[] {
   try {
-    const raw = localStorage.getItem(ARTICLES_KEY);
+    const raw = kvGetSync(ARTICLES_KEY);
     if (!raw) return [];
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];

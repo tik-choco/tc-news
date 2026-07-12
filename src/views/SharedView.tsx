@@ -34,6 +34,7 @@ import { loadReactions, subscribeReactions } from "../lib/reactionStore";
 import { computeDailyRanking, type RankingEntry } from "../lib/ranking";
 import { loadMyArticles } from "../lib/articleStore";
 import { loadPrograms } from "../lib/programStore";
+import { subscribeKvHydrated } from "../lib/kvStore";
 import "../styles/components.css";
 import "../styles/shared.css";
 import "../styles/reactions.css";
@@ -124,6 +125,13 @@ export function SharedView(props: {
   // store write (any ReactionBar anywhere) to re-read it for the ranking pane.
   const [reactionsTick, bumpReactionsTick] = useState(0);
   useEffect(() => subscribeReactions(() => bumpReactionsTick((n) => n + 1)), []);
+  // rankingArticlesById/rankingProgramsById below call loadMyArticles()/
+  // loadPrograms() (mist KV-backed, lib/kvStore.ts) inside a useMemo keyed on
+  // the live room/global props — if hydration finishes without those props
+  // changing, the memo would keep the stale pre-hydration (possibly empty)
+  // read. Bump this on hydration so the memos below re-derive.
+  const [kvHydratedTick, bumpKvHydratedTick] = useState(0);
+  useEffect(() => subscribeKvHydrated(() => bumpKvHydratedTick((n) => n + 1)), []);
 
   useEffect(() => {
     return () => {
@@ -326,7 +334,7 @@ export function SharedView(props: {
       if (!map.has(a.id)) map.set(a.id, a);
     }
     return map;
-  }, [roomArticles, globalArticles]);
+  }, [roomArticles, globalArticles, kvHydratedTick]);
 
   const rankingProgramsById = useMemo(() => {
     const map = new Map<string, RadioProgram>();
@@ -334,7 +342,7 @@ export function SharedView(props: {
       if (!map.has(p.id)) map.set(p.id, p);
     }
     return map;
-  }, [sharedPrograms]);
+  }, [sharedPrograms, kvHydratedTick]);
 
   interface RankingRow {
     entry: RankingEntry;

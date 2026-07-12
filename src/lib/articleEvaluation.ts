@@ -4,7 +4,7 @@
 // over P2P — see docs/SPEC3.md) so a peer can't spoof/spam another user's
 // scores; only the taxonomy category the record proposes may later be copied
 // onto the shared NewsArticle by the caller. The coding style
-// (extractJson/coerceScore defensive parsing, localStorage history,
+// (extractJson/coerceScore defensive parsing, persisted history,
 // requestChatCompletion call shape) mirrors tc-town's characterEvaluation.ts,
 // and the English-prompt + injected `language` convention mirrors generate.ts.
 
@@ -13,6 +13,7 @@ import type { NewsArticle } from "../types";
 import { requestChatCompletion } from "./llm";
 import { tGlobal } from "./i18n";
 import { ARTICLE_CATEGORIES, coerceCategory } from "./categories";
+import { kvGetSync, kvSetSync } from "./kvStore";
 
 // -----------------------------------------------------------------------------
 // Schema
@@ -69,8 +70,8 @@ export interface ArticleEvaluationRecord {
 }
 
 // -----------------------------------------------------------------------------
-// Persistence (localStorage, defensive parsing — same pattern as
-// characterEvaluation.ts)
+// Persistence (mist KV via lib/kvStore.ts, defensive parsing — same pattern
+// as characterEvaluation.ts)
 // -----------------------------------------------------------------------------
 
 const EVALUATIONS_KEY = "tc-news:evaluations";
@@ -121,7 +122,7 @@ function coerceArticleEvaluationRecord(value: unknown): ArticleEvaluationRecord 
 
 function loadAllEvaluations(): Record<string, ArticleEvaluationRecord[]> {
   try {
-    const raw = localStorage.getItem(EVALUATIONS_KEY);
+    const raw = kvGetSync(EVALUATIONS_KEY);
     if (!raw) return {};
     const parsed: unknown = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
@@ -140,11 +141,7 @@ function loadAllEvaluations(): Record<string, ArticleEvaluationRecord[]> {
 }
 
 function persistAllEvaluations(all: Record<string, ArticleEvaluationRecord[]>): void {
-  try {
-    localStorage.setItem(EVALUATIONS_KEY, JSON.stringify(all));
-  } catch {
-    // Storage full / unavailable — non-fatal.
-  }
+  kvSetSync(EVALUATIONS_KEY, JSON.stringify(all));
 }
 
 function saveEvaluation(record: ArticleEvaluationRecord): void {

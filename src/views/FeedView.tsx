@@ -25,6 +25,7 @@ import { loadProviderSettings } from "../lib/llmSettings";
 import { isMuted, loadMutedDids } from "../lib/muteStore";
 import { groupNearDuplicateItems } from "../lib/feedDedupe";
 import { loadPrograms } from "../lib/programStore";
+import { subscribeKvHydrated } from "../lib/kvStore";
 import { enqueueJob, findPendingJob, isCancelError } from "../lib/jobQueue";
 import { useJobQueue } from "../hooks/useJobQueue";
 import { ArticleReaderModal } from "../components/ArticleReaderModal";
@@ -36,6 +37,7 @@ import { ProgramCard } from "../components/ProgramCard";
 import { EmptyState } from "../components/EmptyState";
 import { GenerateBar } from "../components/GenerateBar";
 import { LOCALE_LABELS, useLocale, useT, type Locale } from "../lib/i18n";
+import { safeSetItem } from "../lib/safeStorage";
 import type { ArticleTranslation } from "../lib/translationStore";
 import "../styles/components.css";
 import "../styles/feed.css";
@@ -146,8 +148,13 @@ export function FeedView(props: {
 
   // 番組(自分の分): このビューはタブ切り替えで毎回アンマウント/再マウント
   // されるので(ProgramViewと同様)、state初期化子でのloadPrograms()呼び出し
-  // だけで再訪時に最新化される — jobQueue購読のような仕組みは不要。
-  const [ownPrograms] = useState<RadioProgram[]>(() => loadPrograms());
+  // だけで再訪時に最新化される — jobQueue購読のような仕組みは不要。ただし
+  // mist KV(lib/kvStore.ts)のhydrationは非同期なので、アプリ起動後の最初の
+  // マウント(既定タブがfeedの場合)はhydration前のloadPrograms()を掴んで
+  // しまい得る — タブを切り替えない限り再マウントが起きないので、
+  // hydration完了時にも明示的に再読込する。
+  const [ownPrograms, setOwnPrograms] = useState<RadioProgram[]>(() => loadPrograms());
+  useEffect(() => subscribeKvHydrated(() => setOwnPrograms(loadPrograms())), []);
   const ownProgramIds = useMemo(() => new Set(ownPrograms.map((p) => p.id)), [ownPrograms]);
   // 自分の番組が先(id重複時に勝つ)、次に受信済み番組。新しい順に並べ替える。
   const allPrograms = useMemo(
@@ -179,11 +186,7 @@ export function FeedView(props: {
   function toggleSidebarCollapsed() {
     setSidebarCollapsed((prev) => {
       const next = !prev;
-      try {
-        localStorage.setItem(SIDEBAR_COLLAPSED_KEY, next ? "1" : "0");
-      } catch {
-        /* best-effort persistence */
-      }
+      safeSetItem(SIDEBAR_COLLAPSED_KEY, next ? "1" : "0"); // best-effort persistence
       return next;
     });
   }

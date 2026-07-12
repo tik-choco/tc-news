@@ -1,6 +1,11 @@
 // Persistence for feed sources and collected feed items. Parsed defensively
 // (never trust stored content) — same pattern as tc-town's appSettings.ts.
+// feed-items is the bulky one (up to MAX_FEED_ITEMS entries with summaries)
+// so it lives in the mist KV (see lib/kvStore.ts) instead of localStorage;
+// the feeds list itself is small and stays in localStorage.
 import type { FeedItem, FeedSource } from "../types";
+import { safeSetItem } from "./safeStorage";
+import { kvGetSync, kvSetSync, KV_VALUE_SOFT_LIMIT_BYTES, utf8ByteLength } from "./kvStore";
 
 const FEEDS_KEY = "tc-news:feeds";
 const FEED_ITEMS_KEY = "tc-news:feed-items";
@@ -55,12 +60,12 @@ export function loadFeeds(): FeedSource[] {
 }
 
 export function saveFeeds(feeds: FeedSource[]): void {
-  localStorage.setItem(FEEDS_KEY, JSON.stringify(feeds));
+  safeSetItem(FEEDS_KEY, JSON.stringify(feeds));
 }
 
 export function loadFeedItems(): FeedItem[] {
   try {
-    const raw = localStorage.getItem(FEED_ITEMS_KEY);
+    const raw = kvGetSync(FEED_ITEMS_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
@@ -70,10 +75,25 @@ export function loadFeedItems(): FeedItem[] {
   }
 }
 
-/** Persists items sorted by publishedAt descending, capped at MAX_FEED_ITEMS. */
+/** Floor for the halve-and-retry degradation in saveFeedItems — below this,
+ * further shrinking isn't worth the loss of feed history. */
+const MIN_FEED_ITEMS = 50;
+
+/** Persists items sorted by publishedAt descending, capped at MAX_FEED_ITEMS.
+ * The mist KV rejects/soft-caps values above KV_VALUE_SOFT_LIMIT_BYTES
+ * (lib/kvStore.ts) — if the serialized blob is still over that after the
+ * MAX_FEED_ITEMS cap, degrade by halving the item count and re-measuring,
+ * down to MIN_FEED_ITEMS — trading feed history for a write that actually
+ * fits. If even MIN_FEED_ITEMS doesn't fit, save it anyway (kvSetSync itself
+ * never rejects a write; the backend's own limit is the last resort). */
 export function saveFeedItems(items: FeedItem[]): void {
-  const sorted = [...items].sort((a, b) => b.publishedAt - a.publishedAt).slice(0, MAX_FEED_ITEMS);
-  localStorage.setItem(FEED_ITEMS_KEY, JSON.stringify(sorted));
+  let toSave = [...items].sort((a, b) => b.publishedAt - a.publishedAt).slice(0, MAX_FEED_ITEMS);
+  let serialized = JSON.stringify(toSave);
+  while (utf8ByteLength(serialized) > KV_VALUE_SOFT_LIMIT_BYTES && toSave.length > MIN_FEED_ITEMS) {
+    toSave = toSave.slice(0, Math.max(MIN_FEED_ITEMS, Math.floor(toSave.length / 2)));
+    serialized = JSON.stringify(toSave);
+  }
+  kvSetSync(FEED_ITEMS_KEY, serialized);
 }
 
 /** Merges incoming items into existing, de-duplicating by id (incoming wins,

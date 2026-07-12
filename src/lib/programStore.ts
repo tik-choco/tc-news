@@ -4,9 +4,14 @@
 // expected type, invalid entries dropped rather than crashing the app.
 
 import type { ProgramSegment, RadioProgram } from "../types";
+import { kvGetSync, kvSetSync, KV_VALUE_SOFT_LIMIT_BYTES, utf8ByteLength } from "./kvStore";
 
 const PROGRAMS_KEY = "tc-news:programs";
 const MAX_PROGRAMS = 50;
+/** Floor for the halve-and-retry trim in persist() below. Lower than
+ * articleStore's/feedStore's MIN_* since MAX_PROGRAMS is already only 50 —
+ * a 50-item floor would mean this trim never actually shrinks anything. */
+const MIN_PROGRAMS = 10;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
@@ -54,18 +59,25 @@ function sanitizeProgram(value: unknown): RadioProgram | null {
   return program;
 }
 
+/** Persists programs (expected createdAt-descending), capped at
+ * MAX_PROGRAMS. If the serialized blob is still over the mist KV's soft
+ * limit (lib/kvStore.ts) after that cap, degrade by halving the count and
+ * re-measuring, down to MIN_PROGRAMS — since the array is newest-first this
+ * drops the oldest programs first. */
 function persist(programs: RadioProgram[]): void {
-  try {
-    localStorage.setItem(PROGRAMS_KEY, JSON.stringify(programs.slice(0, MAX_PROGRAMS)));
-  } catch (error) {
-    console.warn("tc-news: failed to persist programs", error);
+  let toSave = programs.slice(0, MAX_PROGRAMS);
+  let serialized = JSON.stringify(toSave);
+  while (utf8ByteLength(serialized) > KV_VALUE_SOFT_LIMIT_BYTES && toSave.length > MIN_PROGRAMS) {
+    toSave = toSave.slice(0, Math.max(MIN_PROGRAMS, Math.floor(toSave.length / 2)));
+    serialized = JSON.stringify(toSave);
   }
+  kvSetSync(PROGRAMS_KEY, serialized);
 }
 
 /** createdAt 降順で保存済みの番組を返す。 */
 export function loadPrograms(): RadioProgram[] {
   try {
-    const raw = localStorage.getItem(PROGRAMS_KEY);
+    const raw = kvGetSync(PROGRAMS_KEY);
     if (!raw) return [];
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];

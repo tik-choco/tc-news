@@ -70,11 +70,13 @@ export interface RadioProgram {
   authorDid?: string;  // 共有時に付与(受信側は wire.fromId と一致検証する)
   authorName?: string; // 共有時に付与
   shared?: boolean;    // 自分の番組を共有済みか(ローカル表示用)
-  // セグメントと同じ長さ・同順の音声CID(mistlib storage_add で格納したmp3)。
+  // セグメントと同じ長さ・同順の音声CID(mistlib storage_add で格納)。
   // 共有時はJSONごとCID化されるので受信者はstorage_getで音声を取得できる。
   // 無ければ受信側TTSで読み上げ。
   audioCids?: string[];
-  audioMime?: string;  // audioCids のMIMEタイプ(現状 "audio/mpeg")
+  // audioCids のMIMEタイプ。TTSサーバーの実応答をsniffして決めるため
+  // "audio/mpeg"(mp3)のことが多いが "audio/wav" のこともある(programAudio.ts参照)。
+  audioMime?: string;
   audioVoice?: string; // レンダリングに使った声のID(表示用)
   imageUrl?: string;   // サムネイル(生成元記事のNewsArticle.imageUrlから引き継ぐ。絶対URL)
 }

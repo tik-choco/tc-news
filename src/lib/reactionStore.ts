@@ -15,6 +15,7 @@
 // from a test, with no need to call back into this module first).
 
 import { REACTION_KINDS, type ReactionKind } from "../types";
+import { safeSetItem } from "./safeStorage";
 
 export interface ReactionRecord {
   targetId: string; // NewsArticle.id または RadioProgram.id
@@ -88,17 +89,14 @@ function persist(records: ReactionRecord[]): ReactionRecord[] {
   if (capped.length > MAX_REACTIONS) {
     capped = [...capped].sort((a, b) => a.timestamp - b.timestamp).slice(capped.length - MAX_REACTIONS);
   }
-  try {
-    const raw = JSON.stringify(capped);
-    localStorage.setItem(REACTIONS_KEY, raw);
+  const raw = JSON.stringify(capped);
+  if (safeSetItem(REACTIONS_KEY, raw)) {
     cachedRaw = raw;
     cachedRecords = capped;
     cacheInitialized = true;
-  } catch {
-    // Ignore storage failures (quota exceeded, private mode, ...); leave the
-    // cache untouched so subsequent reads stay consistent with what's
-    // actually on disk.
   }
+  // On failure, leave the cache untouched so subsequent reads stay
+  // consistent with what's actually on disk.
   return capped;
 }
 

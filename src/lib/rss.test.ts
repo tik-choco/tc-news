@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from "vitest";
-import { parseFeedXml } from "./rss";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { fetchFeedItems, parseFeedXml } from "./rss";
+import { tGlobal } from "./i18n";
 import type { FeedSource } from "../types";
 
 function makeSource(overrides: Partial<FeedSource> = {}): FeedSource {
@@ -218,5 +219,49 @@ describe("parseFeedXml", () => {
 </rss>`;
     const items = parseFeedXml(xml, makeSource());
     expect(items[0].imageUrl).toBe("https://example.com/thumbs/rel.jpg");
+  });
+});
+
+describe("fetchFeedItems", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("throws the dedicated no-CORS-proxy error when the direct fetch fails at the network layer and no proxy is configured", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new TypeError("Failed to fetch")),
+    );
+    const source = makeSource({ label: "The Verge" });
+
+    await expect(fetchFeedItems(source, "")).rejects.toThrow(
+      tGlobal("errors.feedFetchNoCorsProxy", { label: "The Verge" }),
+    );
+    // No proxy configured means there's nothing to retry through.
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to the generic feedFetchFailed error when a CORS proxy is configured but both the direct and proxied fetch fail", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new TypeError("Failed to fetch"));
+    vi.stubGlobal("fetch", fetchMock);
+    const source = makeSource({ label: "The Verge" });
+
+    await expect(fetchFeedItems(source, "https://proxy.example.com/?url=")).rejects.toThrow(
+      tGlobal("errors.feedFetchFailed", { label: "The Verge", detail: "Failed to fetch" }),
+    );
+    // Direct attempt, then one retry through the proxy.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the generic feedFetchFailed error for a non-2xx HTTP response even with no proxy configured", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: false, status: 404, text: async () => "" }),
+    );
+    const source = makeSource({ label: "The Verge" });
+
+    await expect(fetchFeedItems(source, "")).rejects.toThrow(
+      tGlobal("errors.feedFetchFailed", { label: "The Verge", detail: "HTTP 404" }),
+    );
   });
 });
