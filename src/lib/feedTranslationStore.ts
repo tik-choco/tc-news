@@ -2,11 +2,15 @@
 // itemId×lang. Unlike translationStore.ts's article translations, these are
 // never shared over P2P — a feed-item translation is a purely local
 // convenience so the same item×language pair doesn't re-run the LLM every
-// time the feed re-renders. Same defensive-parsing localStorage pattern as
+// time the feed re-renders. Same defensive-parsing persistence pattern as
 // translationStore.ts, but with a much smaller entry cap: each record can
 // embed the full extracted-page HTML (see pageExtract.ts's cache, which
 // caps at 30 for the same reason), so 500 entries' worth would be far too
-// large for localStorage.
+// large a single value. Persisted via kvStore (mist KV, OPFS-backed;
+// localStorage only as a pre-hydration/fallback path — see kvStore.ts's
+// module header).
+
+import { kvGetSync, kvSetSync } from "./kvStore";
 
 const FEED_TRANSLATIONS_KEY = "tc-news:feed-translations";
 const MAX_FEED_TRANSLATIONS = 20;
@@ -53,7 +57,7 @@ function coerceFeedItemTranslation(value: unknown): FeedItemTranslation | null {
 
 function loadAll(): Record<string, FeedItemTranslation> {
   try {
-    const raw = localStorage.getItem(FEED_TRANSLATIONS_KEY);
+    const raw = kvGetSync(FEED_TRANSLATIONS_KEY);
     if (!raw) return {};
     const parsed: unknown = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
@@ -69,11 +73,7 @@ function loadAll(): Record<string, FeedItemTranslation> {
 }
 
 function persistAll(all: Record<string, FeedItemTranslation>): void {
-  try {
-    localStorage.setItem(FEED_TRANSLATIONS_KEY, JSON.stringify(all));
-  } catch {
-    // Storage full / unavailable — non-fatal.
-  }
+  kvSetSync(FEED_TRANSLATIONS_KEY, JSON.stringify(all));
 }
 
 /** フィードアイテム×言語の翻訳(あれば)。無ければnull — 呼び出し側はLLM翻訳を実行する合図として使う。 */

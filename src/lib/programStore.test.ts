@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { addProgram, loadPrograms } from "./programStore";
+import { resetKvStoreForTests } from "./kvStore";
 import type { RadioProgram } from "../types";
 
 const PROGRAMS_KEY = "tc-news:programs";
@@ -16,6 +17,7 @@ function baseProgram(overrides: Partial<RadioProgram> = {}): RadioProgram {
 
 beforeEach(() => {
   localStorage.clear();
+  resetKvStoreForTests();
 });
 
 describe("programStore imageUrl sanitize", () => {

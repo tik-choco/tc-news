@@ -13,6 +13,7 @@ import { EmptyState } from "./EmptyState";
 import { ARTICLE_CATEGORIES, categoryLabelKey, coerceCategory, type ArticleCategory } from "../lib/categories";
 import { useLocale, useT, type Locale } from "../lib/i18n";
 import { groupNearDuplicateItems } from "../lib/feedDedupe";
+import { safeSetItem } from "../lib/safeStorage";
 import "../styles/feedInbox.css";
 
 const COLLAPSE_STORAGE_KEY = "tc-news:feed-inbox-collapsed";
@@ -30,11 +31,8 @@ function readCollapsedInitial(): boolean {
 }
 
 function writeCollapsed(collapsed: boolean) {
-  try {
-    localStorage.setItem(COLLAPSE_STORAGE_KEY, collapsed ? "1" : "0");
-  } catch {
-    // storage unavailable (private mode等) — 開閉自体は動くのでそのまま無視。
-  }
+  // safeSetItem is best-effort (private mode等でも開閉自体は動く) — 戻り値は無視。
+  safeSetItem(COLLAPSE_STORAGE_KEY, collapsed ? "1" : "0");
 }
 
 /** 新着カード1件分。プレビュー取得はカード単位のフックが必要なため、

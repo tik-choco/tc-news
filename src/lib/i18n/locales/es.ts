@@ -264,6 +264,8 @@ export const es: Messages = {
 
   errors: {
     feedFetchFailed: "Error al obtener la fuente ({label}): {detail}",
+    feedFetchNoCorsProxy:
+      'No se puede obtener "{label}" directamente desde el navegador (CORS). Configura un proxy CORS en Ajustes para solucionarlo.',
     llmNotConfigured: "No hay ningún LLM configurado. Añade un proveedor y un preset en Ajustes.",
     llmEmptyResponse: "El proveedor devolvió una respuesta vacía.",
     llmCallFailed: "La solicitud al LLM falló.",

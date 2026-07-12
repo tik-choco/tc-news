@@ -3,6 +3,7 @@
 // shell to re-open the wizard (the overlay lives in app.tsx, above all views).
 
 import { loadMyArticles } from "./articleStore";
+import { safeSetItem } from "./safeStorage";
 
 const DONE_KEY = "tc-news:onboarding-done";
 
@@ -16,11 +17,8 @@ export function isOnboardingDone(): boolean {
 }
 
 export function markOnboardingDone(): void {
-  try {
-    localStorage.setItem(DONE_KEY, "1");
-  } catch {
-    // Non-fatal; worst case the wizard shows again next launch.
-  }
+  // Non-fatal on failure; worst case the wizard shows again next launch.
+  safeSetItem(DONE_KEY, "1");
 }
 
 /**

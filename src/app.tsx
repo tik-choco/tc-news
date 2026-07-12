@@ -33,6 +33,7 @@ import { markOnboardingDone, shouldShowOnboarding, subscribeOnboardingRequests }
 import { connectNetworkConsumer } from "./lib/network";
 import { loadMyArticles, upsertMyArticle, deleteMyArticle, saveSharedArticle } from "./lib/articleStore";
 import { upsertProgram } from "./lib/programStore";
+import { initKvStore, subscribeKvHydrated } from "./lib/kvStore";
 import { GLOBAL_ARTICLES_ROOM_ID } from "./lib/newsWire";
 import { forwardArticleToGlobal } from "./lib/globalArticlesReader";
 import { readHash, writeHash, onHashChange } from "./lib/hashRoute";
@@ -106,6 +107,17 @@ export function App() {
   const [sharedSourceHint, setSharedSourceHint] = useState<{ source: "room" | "global" } | null>(null);
   const [did, setDid] = useState<string>("");
   const [articles, setArticles] = useState<NewsArticle[]>(() => loadMyArticles());
+
+  // Boots the mist KV backend (lib/kvStore.ts) that feed-items/articles/
+  // programs/etc. persist through; safe to call every mount, it's idempotent.
+  // `articles` above was seeded from loadMyArticles() before hydration could
+  // finish (pre-hydration reads fall back to localStorage, which is empty
+  // once a previous session migrated its data into the KV) — re-read once
+  // hydration replaces that fallback.
+  useEffect(() => {
+    void initKvStore();
+    return subscribeKvHydrated(() => setArticles(loadMyArticles()));
+  }, []);
 
   // First-run wizard: shown once on a fresh install, and re-openable from the
   // settings screen. Closing it (any path) marks onboarding done.

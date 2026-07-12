@@ -252,6 +252,7 @@ export const zh: Messages = {
 
   errors: {
     feedFetchFailed: "获取订阅源失败({label})：{detail}",
+    feedFetchNoCorsProxy: "浏览器无法直接获取「{label}」(CORS)。请在设置中配置 CORS 代理以解决此问题。",
     llmNotConfigured: "尚未配置 LLM。请在设置中添加提供方和预设。",
     llmEmptyResponse: "提供方返回了空响应。",
     llmCallFailed: "LLM 调用失败。",

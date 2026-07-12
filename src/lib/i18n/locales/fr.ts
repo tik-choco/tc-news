@@ -264,6 +264,8 @@ export const fr: Messages = {
 
   errors: {
     feedFetchFailed: "Échec de la récupération du flux ({label}) : {detail}",
+    feedFetchNoCorsProxy:
+      "Impossible de récupérer « {label} » directement depuis le navigateur (CORS). Configurez un proxy CORS dans les Paramètres pour résoudre ce problème.",
     llmNotConfigured: "Aucun LLM n'est configuré. Ajoutez un fournisseur et un preset dans les Paramètres.",
     llmEmptyResponse: "Le fournisseur a renvoyé une réponse vide.",
     llmCallFailed: "L'appel au LLM a échoué.",

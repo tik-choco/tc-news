@@ -5,6 +5,7 @@ import type { AppSettings, FeedItem, FeedSource } from "../types";
 import { fetchFeedItems } from "../lib/rss";
 import { classifyFeedItems } from "../lib/feedClassify";
 import { loadFeedItems, loadFeeds, mergeFeedItems, saveFeedItems, saveFeeds } from "../lib/feedStore";
+import { subscribeKvHydrated } from "../lib/kvStore";
 
 export function useFeeds(settings: AppSettings): {
   feeds: FeedSource[];
@@ -105,6 +106,13 @@ export function useFeeds(settings: AppSettings): {
     refreshAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // `items` was seeded from loadFeedItems() before the mist KV finished
+  // hydrating (lib/kvStore.ts) — pre-hydration reads fall back to
+  // localStorage, which is empty once a previous session has migrated its
+  // data into the KV. Re-read once hydration replaces that fallback so
+  // history from earlier sessions actually shows up.
+  useEffect(() => subscribeKvHydrated(() => setItems(loadFeedItems())), []);
 
   // Periodic refresh when enabled.
   useEffect(() => {

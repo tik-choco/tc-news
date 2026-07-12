@@ -8,6 +8,7 @@ import { zh } from "./locales/zh";
 import { ko } from "./locales/ko";
 import { es } from "./locales/es";
 import { fr } from "./locales/fr";
+import { safeSetItem } from "../safeStorage";
 
 export { LOCALES, LOCALE_LABELS, SOURCE_LOCALE, type Locale } from "./types";
 export type { Messages } from "./messages";
@@ -111,11 +112,9 @@ export function LocaleProvider(props: { children: ComponentChildren }) {
     () => ({
       locale,
       setLocale: (l: Locale) => {
-        try {
-          localStorage.setItem(STORAGE_KEY, l);
-        } catch {
-          // Persistence is best-effort; the in-memory switch still applies.
-        }
+        // Persistence is best-effort; the in-memory switch still applies
+        // even if safeSetItem drops the write.
+        safeSetItem(STORAGE_KEY, l);
         setLocaleState(l);
       },
       t: (key, params) => translate(locale, key, params),

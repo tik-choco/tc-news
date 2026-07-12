@@ -72,6 +72,7 @@ import {
 import { useModelOptions, type ModelFetchStatus } from "../lib/models";
 import { OPENAI_TTS_VOICES, useVoiceOptions } from "../lib/voices";
 import { LOCALES, LOCALE_LABELS, useLocale, useT } from "../lib/i18n";
+import { safeSetItem } from "../lib/safeStorage";
 import "../styles/components.css";
 import "../styles/settings.css";
 
@@ -94,11 +95,8 @@ function loadSettingsTab(): SettingsTab {
 }
 
 function saveSettingsTab(tab: SettingsTab): void {
-  try {
-    localStorage.setItem(SETTINGS_TAB_STORAGE_KEY, tab);
-  } catch {
-    // Non-fatal — the tab just won't be remembered next visit.
-  }
+  // Non-fatal on failure — the tab just won't be remembered next visit.
+  safeSetItem(SETTINGS_TAB_STORAGE_KEY, tab);
 }
 
 /** Dedupes `options` against the current `value` (so a manually-typed or

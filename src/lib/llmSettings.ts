@@ -18,6 +18,7 @@
 // the `profiles` key, which the new shape never has).
 
 import { emptyLlmConfig, ensurePreset, ensureProvider, loadLlmConfig, normalizeBaseUrl, saveLlmConfig } from "./llmConfig";
+import { safeSetItem } from "./safeStorage";
 
 const SETTINGS_KEY = "tc-news:provider-settings";
 
@@ -222,11 +223,7 @@ export function loadProviderSettings(): ProviderSettings {
 }
 
 export function saveProviderSettings(settings: ProviderSettings): void {
-  try {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-  } catch (error) {
-    console.warn("tc-news: failed to persist provider settings", error);
-  }
+  safeSetItem(SETTINGS_KEY, JSON.stringify(settings));
   for (const listener of listeners) listener(settings);
 }
 

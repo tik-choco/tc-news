@@ -14,6 +14,7 @@
 // article's CID-on-signed-wire pattern verbatim (loadSharedPrograms /
 // saveSharedPrograms mirror loadSharedArticles / saveSharedArticles).
 import type { NewsArticle, ProgramSegment, RadioProgram } from "../types";
+import { safeSetItem } from "./safeStorage";
 
 /** 全ユーザー共通のグローバル記事ルーム。ファミリー他アプリもこの定数値で購読できる(well-known)。 */
 export const GLOBAL_ARTICLES_ROOM_ID = "tc-global-articles";
@@ -175,11 +176,7 @@ export function loadSharedArticles(roomId: string): NewsArticle[] {
 export function saveSharedArticles(roomId: string, articles: NewsArticle[]): void {
   const sorted = [...articles].sort((a, b) => b.createdAt - a.createdAt);
   const trimmed = sorted.slice(0, MAX_SHARED_ARTICLES);
-  try {
-    localStorage.setItem(SHARED_ARTICLES_KEY_PREFIX + roomId, JSON.stringify(trimmed));
-  } catch {
-    // Ignore storage failures (quota exceeded, private mode, ...).
-  }
+  safeSetItem(SHARED_ARTICLES_KEY_PREFIX + roomId, JSON.stringify(trimmed));
 }
 
 function sanitizeSharedProgramSegment(value: unknown): ProgramSegment | null {
@@ -249,11 +246,7 @@ export function loadSharedPrograms(roomId: string): RadioProgram[] {
 export function saveSharedPrograms(roomId: string, programs: RadioProgram[]): void {
   const sorted = [...programs].sort((a, b) => b.createdAt - a.createdAt);
   const trimmed = sorted.slice(0, MAX_SHARED_PROGRAMS);
-  try {
-    localStorage.setItem(SHARED_PROGRAMS_KEY_PREFIX + roomId, JSON.stringify(trimmed));
-  } catch {
-    // Ignore storage failures (quota exceeded, private mode, ...).
-  }
+  safeSetItem(SHARED_PROGRAMS_KEY_PREFIX + roomId, JSON.stringify(trimmed));
 }
 
 function isArticleWire(value: unknown): value is ArticleWire {
@@ -340,11 +333,7 @@ export function appendWireLog(roomId: string, wire: NewsWire): void {
   if (log.some((w) => w.id === wire.id)) return;
   const next = [...log, wire];
   const trimmed = next.length > MAX_WIRE_LOG ? next.slice(next.length - MAX_WIRE_LOG) : next;
-  try {
-    localStorage.setItem(WIRE_LOG_KEY_PREFIX + roomId, JSON.stringify(trimmed));
-  } catch {
-    // Ignore storage failures (quota exceeded, private mode, ...).
-  }
+  safeSetItem(WIRE_LOG_KEY_PREFIX + roomId, JSON.stringify(trimmed));
 }
 
 /**
@@ -370,9 +359,5 @@ export function appendReactionLog(roomId: string, wire: ReactionWire): void {
   if (log.some((w) => w.id === wire.id)) return;
   const next = [...log, wire];
   const trimmed = next.length > MAX_REACTION_LOG ? next.slice(next.length - MAX_REACTION_LOG) : next;
-  try {
-    localStorage.setItem(REACTION_LOG_KEY_PREFIX + roomId, JSON.stringify(trimmed));
-  } catch {
-    // Ignore storage failures (quota exceeded, private mode, ...).
-  }
+  safeSetItem(REACTION_LOG_KEY_PREFIX + roomId, JSON.stringify(trimmed));
 }

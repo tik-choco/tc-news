@@ -1,6 +1,13 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from "vitest";
-import { extractReadableHtml } from "./pageExtract";
+import { beforeEach, describe, expect, it } from "vitest";
+import { resetKvStoreForTests } from "./kvStore";
+import { type CacheEntry, extractReadableHtml, selectPersistableEntries } from "./pageExtract";
+
+beforeEach(() => {
+  // kvStore keeps an in-memory mirror that outlives localStorage.clear() —
+  // reset it so a write from one test can't leak into the next.
+  resetKvStoreForTests();
+});
 
 const BASE_URL = "https://example.com/news/story";
 
@@ -133,5 +140,57 @@ describe("extractReadableHtml", () => {
     expect(result).not.toContain("<button");
     expect(result).not.toContain("onclick");
     expect(result).not.toContain("style=");
+  });
+});
+
+describe("selectPersistableEntries", () => {
+  function entry(html: string, at: number): CacheEntry {
+    return { html, at };
+  }
+
+  it("drops entries whose HTML exceeds the per-entry persist cap (20,000 chars)", () => {
+    const small = entry("x".repeat(1_000), 100);
+    const large = entry("x".repeat(20_001), 200);
+    const result = selectPersistableEntries({ small, large });
+
+    expect(Object.keys(result)).toEqual(["small"]);
+  });
+
+  it("keeps an entry exactly at the per-entry persist cap", () => {
+    const atCap = entry("x".repeat(20_000), 100);
+    const result = selectPersistableEntries({ atCap });
+
+    expect(Object.keys(result)).toEqual(["atCap"]);
+  });
+
+  it("caps the persisted entry count at 10, keeping the most recently cached", () => {
+    const cache: Record<string, CacheEntry> = {};
+    for (let i = 0; i < 15; i += 1) {
+      cache[`url-${i}`] = entry("x".repeat(100), i); // higher i = more recently cached
+    }
+
+    const result = selectPersistableEntries(cache);
+    const keys = Object.keys(result);
+
+    expect(keys).toHaveLength(10);
+    // Most recent (highest `at`) 10 entries: url-5..url-14.
+    for (let i = 5; i < 15; i += 1) expect(keys).toContain(`url-${i}`);
+    for (let i = 0; i < 5; i += 1) expect(keys).not.toContain(`url-${i}`);
+  });
+
+  it("returns an empty object when given an empty cache", () => {
+    expect(selectPersistableEntries({})).toEqual({});
+  });
+
+  it("worst-case persisted payload (10 entries at the 20,000 char cap) stays at 200,000 chars", () => {
+    const cache: Record<string, CacheEntry> = {};
+    for (let i = 0; i < 10; i += 1) {
+      cache[`url-${i}`] = entry("x".repeat(20_000), i);
+    }
+    const result = selectPersistableEntries(cache);
+    const totalHtmlChars = Object.values(result).reduce((sum, e) => sum + e.html.length, 0);
+
+    expect(Object.keys(result)).toHaveLength(10);
+    expect(totalHtmlChars).toBe(200_000);
   });
 });

@@ -4,6 +4,7 @@
 // fall back to defaults), following tc-town's lib/appSettings.ts pattern.
 
 import type { AppSettings, MainTab } from "../types";
+import { safeSetItem } from "./safeStorage";
 
 const SETTINGS_KEY = "tc-news:app-settings";
 
@@ -57,11 +58,7 @@ export function loadAppSettings(): AppSettings {
 }
 
 export function saveAppSettings(settings: AppSettings): void {
-  try {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-  } catch (error) {
-    console.warn("tc-news: failed to persist app settings", error);
-  }
+  safeSetItem(SETTINGS_KEY, JSON.stringify(settings));
 }
 
 /**

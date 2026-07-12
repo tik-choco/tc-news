@@ -255,6 +255,7 @@ export const ko: Messages = {
 
   errors: {
     feedFetchFailed: "피드를 가져오지 못했습니다({label}): {detail}",
+    feedFetchNoCorsProxy: '브라우저에서 "{label}"을(를) 직접 가져올 수 없습니다(CORS). 설정 화면에서 CORS 프록시를 설정하면 해결됩니다.',
     llmNotConfigured: "LLM이 설정되지 않았습니다. 설정 화면에서 프로바이더와 프리셋을 추가하세요.",
     llmEmptyResponse: "제공자가 빈 응답을 반환했습니다.",
     llmCallFailed: "LLM 호출에 실패했습니다.",

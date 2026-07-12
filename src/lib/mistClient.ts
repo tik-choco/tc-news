@@ -26,6 +26,7 @@ export { EVENT_RAW, storage_add, storage_get };
 export type { MediaEventPayload };
 
 import type { SharedStorageBackend } from "../crypto/didIdentity";
+import { safeSetItem } from "./safeStorage";
 
 const SHARED_STORAGE_NAME = "tc-shared";
 
@@ -56,7 +57,7 @@ export function localNodeId(): string {
   let id = localStorage.getItem(NODE_ID_STORAGE_KEY);
   if (!id) {
     id = crypto.randomUUID();
-    localStorage.setItem(NODE_ID_STORAGE_KEY, id);
+    safeSetItem(NODE_ID_STORAGE_KEY, id);
   }
   return id;
 }

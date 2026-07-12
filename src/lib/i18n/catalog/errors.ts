@@ -7,6 +7,8 @@
 // other. Additional languages live in ../locales/<lang>.ts.
 const ja = {
   feedFetchFailed: "フィードの取得に失敗しました({label}): {detail}",
+  feedFetchNoCorsProxy:
+    "「{label}」をブラウザから直接取得できません(CORS)。設定画面でCORSプロキシを設定してください。",
   llmNotConfigured: "LLMが設定されていません。設定画面でプロバイダーとプリセットを追加してください。",
   llmEmptyResponse: "プロバイダーが空の応答を返しました。",
   llmCallFailed: "LLM呼び出しに失敗しました。",
@@ -19,6 +21,8 @@ const ja = {
 
 const en: typeof ja = {
   feedFetchFailed: "Failed to fetch feed ({label}): {detail}",
+  feedFetchNoCorsProxy:
+    'Cannot fetch "{label}" directly from the browser (CORS). Set a CORS proxy in Settings to fix this.',
   llmNotConfigured: "No LLM is configured. Add a provider and a preset in Settings.",
   llmEmptyResponse: "The provider returned an empty response.",
   llmCallFailed: "The LLM request failed.",

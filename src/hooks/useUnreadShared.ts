@@ -6,6 +6,7 @@
 // again.
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { NewsArticle } from "../types";
+import { safeSetItem } from "../lib/safeStorage";
 
 const SEEN_IDS_KEY = "tc-news:shared-seen-ids";
 const MAX_SEEN_IDS = 500;
@@ -23,13 +24,9 @@ function loadSeenIds(): string[] {
 }
 
 function saveSeenIds(ids: string[]): void {
-  try {
-    // Oldest-first eviction: keep only the most recently seen MAX_SEEN_IDS
-    // ids (ids are only ever appended, never reordered).
-    localStorage.setItem(SEEN_IDS_KEY, JSON.stringify(ids.slice(-MAX_SEEN_IDS)));
-  } catch (error) {
-    console.warn("tc-news: failed to persist seen shared ids", error);
-  }
+  // Oldest-first eviction: keep only the most recently seen MAX_SEEN_IDS
+  // ids (ids are only ever appended, never reordered).
+  safeSetItem(SEEN_IDS_KEY, JSON.stringify(ids.slice(-MAX_SEEN_IDS)));
 }
 
 /** Count of `articles` whose id has not yet been marked seen. Marks all

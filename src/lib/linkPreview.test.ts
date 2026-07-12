@@ -1,6 +1,13 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
+import { resetKvStoreForTests } from "./kvStore";
 import { parseLinkPreviewHtml } from "./linkPreview";
+
+beforeEach(() => {
+  // kvStore keeps an in-memory mirror that outlives localStorage.clear() —
+  // reset it so a write from one test can't leak into the next.
+  resetKvStoreForTests();
+});
 
 describe("parseLinkPreviewHtml", () => {
   it("reads og:* tags", () => {
