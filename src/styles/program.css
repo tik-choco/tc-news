@@ -378,13 +378,25 @@
 .program-segment {
   padding: var(--space-3) var(--space-4);
   font-size: 0.92rem;
-  line-height: 1.75;
+  /* ルビ(rt)が乗ると行が縦に伸びるため、通常より少し広めのline-heightで
+     ルビ表示時に隣接行と詰まらないようにしておく(ルビ無しセグメントでも
+     見た目の差は僅か)。 */
+  line-height: 2.1;
   color: var(--text-muted);
   background: var(--surface-2);
   border-left: 3px solid transparent;
   border-radius: 0 var(--radius-s) var(--radius-s) 0;
   transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease),
     color var(--dur) var(--ease);
+}
+
+/* ルビ(ふりがな)表示: 台本の漢字語に読み仮名を添える(settings.programRuby
+   が有効な場合のみsegment.rubyが入る)。本文サイズに対して控えめな比率。 */
+.program-segment rt {
+  font-size: 0.55em;
+  font-weight: 500;
+  color: var(--text-subtle);
+  user-select: none;
 }
 
 .program-segment--active {

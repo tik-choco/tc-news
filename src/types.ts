@@ -57,6 +57,9 @@ export const REACTION_EMOJI: Record<ReactionKind, string> = {
 export interface ProgramSegment {
   articleId?: string;
   text: string; // 読み上げる台本テキスト(プレーンテキスト)
+  // {漢字|かんじ}記法(lib/ruby.ts)のマーカー入り台本。表示専用で、
+  // TTS・音声レンダリングは text(プレーン)を使う。無ければルビなし表示。
+  ruby?: string;
 }
 
 /** 記事群から生成したラジオ風番組。P2P共有時はJSON全体がCID化されて
@@ -95,6 +98,7 @@ export interface AppSettings {
   autoGenerate: boolean;      // 新着アイテムから記事を自動生成。既定 false
   globalShare: boolean;       // 共有時にグローバルルーム(tc-global-articles)へも配信。既定 true
   showMediaPreviews: boolean; // サムネイル/リンクプレビュー(OGP自動取得)を表示。既定 true
+  programRuby: boolean;       // 番組台本の生成時に漢字等へルビ({漢字|かんじ}記法)を付ける。既定 false
 }
 
 export type MainTab = "feed" | "shared" | "program" | "settings";

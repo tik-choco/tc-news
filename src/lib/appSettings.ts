@@ -17,6 +17,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   autoGenerate: false,
   globalShare: true,
   showMediaPreviews: true,
+  programRuby: false,
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -44,6 +45,7 @@ function sanitizeAppSettings(value: unknown): AppSettings {
     // 既存ユーザー(キー無し)はtrue扱い — グローバル配信は既定オン。
     globalShare: value.globalShare !== false,
     showMediaPreviews: typeof value.showMediaPreviews === "boolean" ? value.showMediaPreviews : true,
+    programRuby: value.programRuby === true,
   };
 }
 

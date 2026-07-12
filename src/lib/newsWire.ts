@@ -190,6 +190,7 @@ function sanitizeSharedProgramSegment(value: unknown): ProgramSegment | null {
   if (typeof v.text !== "string" || !v.text) return null;
   const segment: ProgramSegment = { text: v.text };
   if (typeof v.articleId === "string" && v.articleId) segment.articleId = v.articleId;
+  if (typeof v.ruby === "string" && v.ruby) segment.ruby = v.ruby;
   return segment;
 }
 

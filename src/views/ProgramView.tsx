@@ -38,6 +38,7 @@ import { mediaPreviewsEnabled } from "../lib/linkPreview";
 import { addProgram, loadPrograms, removeProgram, upsertProgram } from "../lib/programStore";
 import { subscribeKvHydrated } from "../lib/kvStore";
 import { generateProgram } from "../lib/programGenerate";
+import { parseRuby } from "../lib/ruby";
 import { activeTtsEngine, isTtsSupported, listVoices, pickDefaultVoice } from "../lib/tts";
 import { downloadProgramAudio, renderProgramAudio } from "../lib/programAudio";
 import { OPENAI_TTS_VOICES, useVoiceOptions } from "../lib/voices";
@@ -60,6 +61,28 @@ const RATE_OPTIONS = [0.75, 1, 1.25, 1.5, 2];
 // idを作る(FeedView.tsxのbuildTargetIdと同じ考え方)。
 function buildTargetId(ids: string[]): string {
   return ids.slice().sort().join("+");
+}
+
+// 台本セグメントのテキスト表示: segment.ruby(マーカー入り文字列)があれば
+// parseRuby()でトークン化し<ruby><rt>付きで描画、無ければ従来通り平文の
+// segment.textをそのまま出す。dangerouslySetInnerHTMLは使わない。
+function SegmentText(props: { text: string; ruby?: string }): JSX.Element {
+  if (!props.ruby) return <>{props.text}</>;
+  const tokens = parseRuby(props.ruby);
+  return (
+    <>
+      {tokens.map((token, index) =>
+        token.ruby ? (
+          <ruby key={index}>
+            {token.base}
+            <rt>{token.ruby}</rt>
+          </ruby>
+        ) : (
+          <span key={index}>{token.base}</span>
+        ),
+      )}
+    </>
+  );
 }
 
 // Program row thumbnail: same opt-in-and-drop-silently-on-failure idiom as
@@ -92,8 +115,10 @@ export function ProgramView(props: {
   onReactToProgram: (programId: string, kind: ReactionKind) => Promise<void>;
   /** ランキング等からの深リンク: このidの番組(自分の/受信どちらでも)を選択する。 */
   deepLinkId?: string | null;
+  /** 設定 programRuby — 台本生成時にルビ付与を指示する。 */
+  rubyEnabled: boolean;
 }): JSX.Element {
-  const { articles, myDid, sharedPrograms, onShareProgram, onReactToProgram, deepLinkId } = props;
+  const { articles, myDid, sharedPrograms, onShareProgram, onReactToProgram, deepLinkId, rubyEnabled } = props;
   const t = useT();
   const { locale } = useLocale();
 
@@ -301,6 +326,7 @@ export function ProgramView(props: {
             profileId: "",
             language: LOCALE_LABELS[locale],
             locale,
+            ruby: rubyEnabled,
           });
           // generateProgram自体はsignalを受け取れない単発呼び出しなので、
           // 解決した直後がキャンセルを反映できる最初のタイミング。
@@ -828,7 +854,7 @@ export function ProgramView(props: {
                   }}
                   class={`program-segment${playState !== "idle" && index === currentIndex ? " program-segment--active" : ""}`}
                 >
-                  {segment.text}
+                  <SegmentText text={segment.text} ruby={segment.ruby} />
                 </li>
               ))}
             </ul>

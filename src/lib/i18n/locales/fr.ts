@@ -186,6 +186,9 @@ export const fr: Messages = {
       "Relais pour les flux qui ne peuvent pas être récupérés directement. L'URL du flux est ajoutée à la fin.",
     refreshInterval: "Intervalle d'actualisation automatique (minutes, 0 pour désactiver)",
     autoGenerate: "Générer automatiquement un article dès que 3 nouveaux éléments ou plus sont accumulés",
+    programRuby: "Ajouter le furigana (ruby) aux scripts des programmes",
+    programRubyHint:
+      "Affiche les lectures furigana au-dessus des kanji dans les scripts générés en studio. N'affecte pas l'audio lu à voix haute.",
     globalShareLabel: "Publier aussi globalement",
     globalShareDesc:
       "Lors du partage dans votre salon, publie aussi l'article dans le salon global accessible à tous.",

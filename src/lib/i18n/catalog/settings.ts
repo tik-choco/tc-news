@@ -22,6 +22,9 @@ const ja = {
   corsProxyHint: "直接取得できないフィード用の中継先です。フィードURLを末尾に付けて呼び出します。",
   refreshInterval: "自動更新間隔(分・0で無効)",
   autoGenerate: "新着が3件以上たまったら自動で記事を生成する",
+  programRuby: "番組の台本にルビを振る",
+  programRubyHint:
+    "スタジオで生成する台本の漢字などにふりがな(ルビ)を付けて表示します。読み上げ音声には影響しません。",
   globalShareLabel: "グローバルにも配信",
   globalShareDesc: "ルームへ共有するとき、全員参加のグローバルルームにも記事を配信します。",
   showMediaPreviews: "サムネイル・リンクプレビューを表示",
@@ -112,6 +115,9 @@ const en: typeof ja = {
   corsProxyHint: "Relay for feeds that can't be fetched directly. The feed URL is appended to it.",
   refreshInterval: "Auto-refresh interval (minutes, 0 to disable)",
   autoGenerate: "Automatically generate an article once 3+ new items have arrived",
+  programRuby: "Add furigana (ruby) to program scripts",
+  programRubyHint:
+    "Shows furigana readings above kanji in generated scripts. Does not affect the spoken audio.",
   globalShareLabel: "Also publish globally",
   globalShareDesc: "When sharing to your room, also publish the article to the global room everyone can read.",
   showMediaPreviews: "Show thumbnails and link previews",

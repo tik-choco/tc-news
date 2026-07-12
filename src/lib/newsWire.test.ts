@@ -98,6 +98,28 @@ describe("sanitizeSharedProgram", () => {
   it("returns null when segments are empty", () => {
     expect(sanitizeSharedProgram(baseWireProgram({ segments: [] }))).toBeNull();
   });
+
+  it("round-trips a segment's ruby text", () => {
+    const program = sanitizeSharedProgram(
+      baseWireProgram({ segments: [{ text: "seg one", ruby: "{漢字|かんじ}のテスト" }] }),
+    );
+    expect(program).not.toBeNull();
+    expect(program?.segments[0].ruby).toBe("{漢字|かんじ}のテスト");
+  });
+
+  it("drops a non-string ruby but keeps the segment", () => {
+    const program = sanitizeSharedProgram(baseWireProgram({ segments: [{ text: "seg one", ruby: 123 }] }));
+    expect(program).not.toBeNull();
+    expect(program?.segments).toHaveLength(1);
+    expect(program?.segments[0].ruby).toBeUndefined();
+  });
+
+  it("drops an empty-string ruby but keeps the segment", () => {
+    const program = sanitizeSharedProgram(baseWireProgram({ segments: [{ text: "seg one", ruby: "" }] }));
+    expect(program).not.toBeNull();
+    expect(program?.segments).toHaveLength(1);
+    expect(program?.segments[0].ruby).toBeUndefined();
+  });
 });
 
 function makeProgramWire(overrides: Partial<ProgramWire> = {}): ProgramWire {

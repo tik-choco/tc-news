@@ -23,6 +23,7 @@ function sanitizeSegment(value: unknown): ProgramSegment | null {
   if (!text) return null;
   const segment: ProgramSegment = { text };
   if (typeof value.articleId === "string" && value.articleId) segment.articleId = value.articleId;
+  if (typeof value.ruby === "string" && value.ruby) segment.ruby = value.ruby;
   return segment;
 }
 

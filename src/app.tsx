@@ -459,6 +459,7 @@ export function App() {
             myDid={did}
             sharedPrograms={allSharedPrograms}
             deepLinkId={programDeepLinkId}
+            rubyEnabled={settings.programRuby}
             onShareProgram={async (program: RadioProgram) => {
               const stamped = await shareProgram(program);
               if (settings.globalShare && settings.roomId !== GLOBAL_ARTICLES_ROOM_ID) {

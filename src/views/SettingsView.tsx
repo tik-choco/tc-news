@@ -531,6 +531,19 @@ export function SettingsView(props: {
             <label class="checkbox-field">
               <input
                 type="checkbox"
+                checked={settings.programRuby}
+                onChange={(e) => updateGeneral({ programRuby: e.currentTarget.checked })}
+              />
+              <span>
+                {t("settings.programRuby")}
+                <br />
+                <span class="field-hint">{t("settings.programRubyHint")}</span>
+              </span>
+            </label>
+
+            <label class="checkbox-field">
+              <input
+                type="checkbox"
                 checked={settings.globalShare}
                 onChange={(e) => updateGeneral({ globalShare: e.currentTarget.checked })}
               />
