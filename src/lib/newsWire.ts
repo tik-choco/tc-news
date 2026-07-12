@@ -12,7 +12,10 @@
 // log (loadReactionLog/appendReactionLog below) so a burst of reactions
 // can't evict article wires from the replay window. Programs reuse the
 // article's CID-on-signed-wire pattern verbatim (loadSharedPrograms /
-// saveSharedPrograms mirror loadSharedArticles / saveSharedArticles).
+// saveSharedPrograms mirror loadSharedArticles / saveSharedArticles) and,
+// like reactions, get their own replay log (loadProgramLog/appendProgramLog)
+// so shared programs reach late joiners without competing with article wires
+// for replay-window slots.
 import type { NewsArticle, ProgramSegment, RadioProgram } from "../types";
 import { safeSetItem } from "./safeStorage";
 
@@ -108,10 +111,12 @@ const SHARED_ARTICLES_KEY_PREFIX = "tc-news:shared:";
 const WIRE_LOG_KEY_PREFIX = "tc-news:wirelog:";
 const SHARED_PROGRAMS_KEY_PREFIX = "tc-news:shared-programs:";
 const REACTION_LOG_KEY_PREFIX = "tc-news:reactionlog:";
+const PROGRAM_LOG_KEY_PREFIX = "tc-news:programlog:";
 const MAX_SHARED_ARTICLES = 200;
 const MAX_WIRE_LOG = 300;
 const MAX_SHARED_PROGRAMS = 100;
 const MAX_REACTION_LOG = 1000;
+const MAX_PROGRAM_LOG = 100;
 
 export function newTranslationWireId(): string {
   try {
@@ -360,4 +365,32 @@ export function appendReactionLog(roomId: string, wire: ReactionWire): void {
   const next = [...log, wire];
   const trimmed = next.length > MAX_REACTION_LOG ? next.slice(next.length - MAX_REACTION_LOG) : next;
   safeSetItem(REACTION_LOG_KEY_PREFIX + roomId, JSON.stringify(trimmed));
+}
+
+/**
+ * 番組ワイヤの履歴ログ(新規参加者へのリプレイ用)。記事のwireLogとは別キーで保持
+ * する理由はリアクションと同じ — ログを混ぜると番組が記事ワイヤをリプレイ窓から
+ * 押し出し得る(ヘッダコメント参照)。かつては番組は意図的にリプレイ対象外だった
+ * が、「共有ボタンを押しても後から参加したユーザーに届かない」ため専用ログで
+ * リプレイ対象に加えた。
+ */
+export function loadProgramLog(roomId: string): ProgramWire[] {
+  try {
+    const raw = localStorage.getItem(PROGRAM_LOG_KEY_PREFIX + roomId);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(isProgramWire);
+  } catch {
+    return [];
+  }
+}
+
+/** 番組ワイヤをwire id(=program.id)でデデュープして記録する(上限件数で切り詰め)。 */
+export function appendProgramLog(roomId: string, wire: ProgramWire): void {
+  const log = loadProgramLog(roomId);
+  if (log.some((w) => w.id === wire.id)) return;
+  const next = [...log, wire];
+  const trimmed = next.length > MAX_PROGRAM_LOG ? next.slice(next.length - MAX_PROGRAM_LOG) : next;
+  safeSetItem(PROGRAM_LOG_KEY_PREFIX + roomId, JSON.stringify(trimmed));
 }
