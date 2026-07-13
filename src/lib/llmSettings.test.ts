@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { LLM_CONFIG_KEY } from "./llmConfig";
 import { loadProviderSettings, saveProviderSettings, subscribeProviderSettings, type ProviderSettings } from "./llmSettings";
 
 const SETTINGS_KEY = "tc-news:provider-settings";
@@ -107,5 +108,34 @@ describe("legacy migration", () => {
     // loading again should return the same (already-migrated) settings rather
     // than re-running the migration.
     expect(loadProviderSettings()).toEqual(loaded);
+  });
+
+  it("aborts migration and leaves both records untouched when the shared LLM config is corrupted", () => {
+    const legacyRaw = JSON.stringify({
+      profiles: [{ id: "a", label: "A", baseUrl: "http://a", apiKey: "k", model: "m", temperature: 0.5 }],
+      defaultProfileId: "a",
+      networkConsumerEnabled: true,
+      orchestratorProfileId: "a",
+      workerProfileId: "a",
+      tts: { enabled: true },
+    });
+    localStorage.setItem(SETTINGS_KEY, legacyRaw);
+
+    // The shared key's raw value exists but doesn't sanitize — a corrupted
+    // record, not merely absent.
+    const corruptedSharedRaw = JSON.stringify({ v: 2, providers: "not-an-array" });
+    localStorage.setItem(LLM_CONFIG_KEY, corruptedSharedRaw);
+
+    const loaded = loadProviderSettings();
+    // Migration was aborted, so we fall back to plain defaults rather than
+    // whatever the legacy record's role pointers were.
+    expect(loaded).toEqual(baseSettings());
+
+    // Neither record was overwritten: the corrupted shared config survives
+    // untouched (never healed by blind-overwriting with an empty config),
+    // and the legacy provider-settings record is left in place so migration
+    // can be retried once the shared config is fixed.
+    expect(localStorage.getItem(LLM_CONFIG_KEY)).toBe(corruptedSharedRaw);
+    expect(localStorage.getItem(SETTINGS_KEY)).toBe(legacyRaw);
   });
 });

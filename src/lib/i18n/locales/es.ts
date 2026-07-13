@@ -263,6 +263,9 @@ export const es: Messages = {
     voiceErrorFallback:
       "No se pudo cargar la lista de voces. Se muestran las voces estándar. También puedes introducir una manualmente.",
     voiceFetched: "Se obtuvieron {count} voz(es).",
+    sharedConfigCorruptedWarning:
+      "El registro de configuración LLM compartida (tc-shared-llm-config-v1) está dañado y no se puede cargar. Los cambios que hagas aquí no se guardarán.",
+    saveFailedWarning: "No se pudieron guardar los ajustes. Es posible que el almacenamiento del navegador esté lleno.",
   },
 
   errors: {
@@ -330,6 +333,8 @@ export const es: Messages = {
     testOk: "¡Conexión establecida!",
     testError: "Error de conexión: {message}",
     testMessage: 'Esto es una prueba de conexión. Responde únicamente "OK".',
+    saveErrorCorrupted: "No se pudo guardar: la configuración LLM almacenada parece dañada. Revísala en Ajustes.",
+    saveErrorWriteFailed: "No se pudo guardar (puede que no quede espacio de almacenamiento).",
 
     nameTitle: "Elige un apodo",
     nameIntro:

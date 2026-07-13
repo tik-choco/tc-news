@@ -33,6 +33,7 @@ import {
   initKvStore,
   isKvHydrated,
   kvDeleteSync,
+  kvGetOrMigrate,
   kvGetSync,
   kvSetSync,
   resetKvStoreForTests,
@@ -41,6 +42,10 @@ import {
 
 const KEY = "tc-news:articles";
 const OTHER_KEY = "tc-news:programs";
+// A key deliberately not in KV_MANAGED_KEYS, e.g. tc-news:shared:<roomId> —
+// exercises kvGetOrMigrate's lazy per-key path rather than initKvStore's
+// fixed-list boot loop.
+const ROOM_KEY = "tc-news:shared:room-1";
 
 beforeEach(() => {
   localStorage.clear();
@@ -132,6 +137,80 @@ describe("post-hydration reads", () => {
     // A later, unrelated localStorage write must not shadow the mirror.
     localStorage.setItem(KEY, "different-localStorage-value");
     expect(kvGetSync(KEY)).toBe("mirror-value");
+  });
+});
+
+describe("kvGetOrMigrate (lazy per-key migration for keys not in KV_MANAGED_KEYS)", () => {
+  it("returns null and doesn't touch the KV when the backend isn't ready yet", async () => {
+    const result = await kvGetOrMigrate(ROOM_KEY);
+    expect(result).toBeNull();
+    expect(storageKvGet).not.toHaveBeenCalled();
+  });
+
+  it("falls back to a plain localStorage read pre-backend, without migrating", async () => {
+    localStorage.setItem(ROOM_KEY, "legacy-room-value");
+    const result = await kvGetOrMigrate(ROOM_KEY);
+    expect(result).toBe("legacy-room-value");
+    // Not migrated yet — backend wasn't ready, so the legacy copy stays put.
+    expect(localStorage.getItem(ROOM_KEY)).toBe("legacy-room-value");
+    expect(storageKvSet).not.toHaveBeenCalled();
+  });
+
+  it("post-backend: migrates a legacy localStorage value into the KV and removes it from localStorage", async () => {
+    await initKvStore(); // brings the backend up without touching ROOM_KEY (not KV_MANAGED_KEYS)
+    localStorage.setItem(ROOM_KEY, "legacy-room-value");
+
+    const result = await kvGetOrMigrate(ROOM_KEY);
+
+    expect(result).toBe("legacy-room-value");
+    expect(localStorage.getItem(ROOM_KEY)).toBeNull();
+    expect(storageKvSet).toHaveBeenCalledWith(ROOM_KEY, expect.any(Uint8Array));
+    const stored = kvMap.get(ROOM_KEY);
+    expect(stored && new TextDecoder().decode(stored)).toBe("legacy-room-value");
+  });
+
+  it("post-backend: reads straight from the KV when there's no localStorage legacy copy", async () => {
+    await initKvStore();
+    kvMap.set(ROOM_KEY, new TextEncoder().encode("kv-room-value"));
+
+    const result = await kvGetOrMigrate(ROOM_KEY);
+
+    expect(result).toBe("kv-room-value");
+  });
+
+  it("returns null when the key exists nowhere", async () => {
+    await initKvStore();
+    expect(await kvGetOrMigrate(ROOM_KEY)).toBeNull();
+  });
+
+  it("is idempotent: a second call reads the mirror instead of hitting the KV again", async () => {
+    await initKvStore();
+    kvMap.set(ROOM_KEY, new TextEncoder().encode("kv-room-value"));
+
+    await kvGetOrMigrate(ROOM_KEY);
+    storageKvGet.mockClear();
+    const second = await kvGetOrMigrate(ROOM_KEY);
+
+    expect(second).toBe("kv-room-value");
+    expect(storageKvGet).not.toHaveBeenCalled();
+  });
+
+  it("a same-session kvSetSync write is visible to a later kvGetOrMigrate without re-fetching the KV", async () => {
+    await initKvStore();
+    kvSetSync(ROOM_KEY, "session-value");
+    storageKvGet.mockClear();
+
+    expect(await kvGetOrMigrate(ROOM_KEY)).toBe("session-value");
+    expect(storageKvGet).not.toHaveBeenCalled();
+  });
+
+  it("kvGetSync sees the value once kvGetOrMigrate has hydrated it into the mirror", async () => {
+    await initKvStore();
+    localStorage.setItem(ROOM_KEY, "legacy-room-value");
+
+    await kvGetOrMigrate(ROOM_KEY);
+
+    expect(kvGetSync(ROOM_KEY)).toBe("legacy-room-value");
   });
 });
 

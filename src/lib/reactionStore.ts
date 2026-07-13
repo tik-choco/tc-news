@@ -6,16 +6,21 @@
 // loadReactions() to compute the daily leaderboard; this module only owns
 // storage + same-tab pub-sub, no ranking math (kept pure/testable there).
 //
-// Same defensive-parsing localStorage pattern as the rest of tc-news: JSON
-// parsed in a try/catch, every field coerced to its expected type, invalid
-// entries dropped. On top of that, an in-memory cache avoids re-parsing the
+// Persisted through lib/kvStore.ts (mist KV, same as articleStore.ts/
+// feedStore.ts/etc.) rather than localStorage directly — up to MAX_REACTIONS
+// records is the largest unbounded-growth cache tc-news had left outside the
+// KV. Same defensive-parsing pattern as the rest of tc-news: JSON parsed in a
+// try/catch, every field coerced to its expected type, invalid entries
+// dropped. On top of that, an in-memory cache avoids re-parsing the
 // (potentially large) reaction list on every countsFor() call from a card —
 // the cache is keyed by raw-string identity, so it self-invalidates whenever
-// the persisted value actually changes (including a bare `localStorage.clear()`
-// from a test, with no need to call back into this module first).
+// the persisted value actually changes. (Tests: kvGetSync's mirror is a
+// module singleton, so unlike a bare `localStorage.clear()`, resetting
+// between tests needs kvStore.ts's resetKvStoreForTests() too — see
+// reactionStore.test.ts's beforeEach.)
 
 import { REACTION_KINDS, type ReactionKind } from "../types";
-import { safeSetItem } from "./safeStorage";
+import { KV_VALUE_SOFT_LIMIT_BYTES, kvGetSync, kvSetSync, utf8ByteLength } from "./kvStore";
 
 export interface ReactionRecord {
   targetId: string; // NewsArticle.id または RadioProgram.id
@@ -28,6 +33,11 @@ export interface ReactionRecord {
 
 const REACTIONS_KEY = "tc-news:reactions";
 const MAX_REACTIONS = 5000;
+/** Floor for the halve-and-retry trim in persist() below, mirroring
+ * articleStore.ts/feedStore.ts's guard against the mist KV's soft limit
+ * (lib/kvStore.ts) — kept proportional to MAX_REACTIONS the same way those
+ * modules keep their floor proportional to their own max. */
+const MIN_REACTIONS = 500;
 
 function isReactionKind(value: unknown): value is ReactionKind {
   return typeof value === "string" && (REACTION_KINDS as readonly string[]).includes(value);
@@ -70,12 +80,7 @@ let cachedRaw: string | null = null;
 let cachedRecords: ReactionRecord[] = [];
 
 function readAll(): ReactionRecord[] {
-  let raw: string | null;
-  try {
-    raw = localStorage.getItem(REACTIONS_KEY);
-  } catch {
-    return cacheInitialized ? cachedRecords : [];
-  }
+  const raw = kvGetSync(REACTIONS_KEY);
   if (cacheInitialized && raw === cachedRaw) return cachedRecords;
   cachedRaw = raw;
   cachedRecords = parse(raw);
@@ -83,20 +88,27 @@ function readAll(): ReactionRecord[] {
   return cachedRecords;
 }
 
-/** Persists `records` (capped, oldest-first evicted) and refreshes the cache on success. */
+/** Persists `records` (capped, oldest-first evicted, then further halved if
+ * still over the mist KV's soft limit) and refreshes the cache. kvSetSync
+ * updates its in-memory mirror synchronously and only best-effort-queues the
+ * backend write (see lib/kvStore.ts), so unlike the old safeSetItem-backed
+ * version this can't "fail" from this module's point of view — the cache is
+ * always refreshed. */
 function persist(records: ReactionRecord[]): ReactionRecord[] {
   let capped = records;
   if (capped.length > MAX_REACTIONS) {
     capped = [...capped].sort((a, b) => a.timestamp - b.timestamp).slice(capped.length - MAX_REACTIONS);
   }
-  const raw = JSON.stringify(capped);
-  if (safeSetItem(REACTIONS_KEY, raw)) {
-    cachedRaw = raw;
-    cachedRecords = capped;
-    cacheInitialized = true;
+  let raw = JSON.stringify(capped);
+  while (utf8ByteLength(raw) > KV_VALUE_SOFT_LIMIT_BYTES && capped.length > MIN_REACTIONS) {
+    const oldestFirst = [...capped].sort((a, b) => a.timestamp - b.timestamp);
+    capped = oldestFirst.slice(oldestFirst.length - Math.max(MIN_REACTIONS, Math.floor(oldestFirst.length / 2)));
+    raw = JSON.stringify(capped);
   }
-  // On failure, leave the cache untouched so subsequent reads stay
-  // consistent with what's actually on disk.
+  kvSetSync(REACTIONS_KEY, raw);
+  cachedRaw = raw;
+  cachedRecords = capped;
+  cacheInitialized = true;
   return capped;
 }
 

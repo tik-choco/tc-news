@@ -37,6 +37,8 @@ const ja = {
   testOk: "接続できました!",
   testError: "接続に失敗しました: {message}",
   testMessage: "接続テストです。「OK」とだけ返してください。",
+  saveErrorCorrupted: "設定データが壊れているため保存できませんでした。設定画面で確認してください。",
+  saveErrorWriteFailed: "保存に失敗しました(ストレージの空き容量が不足している可能性があります)。",
 
   // Step 2: nickname
   nameTitle: "ニックネームを設定",
@@ -90,6 +92,8 @@ const en: typeof ja = {
   testOk: "Connected!",
   testError: "Connection failed: {message}",
   testMessage: 'This is a connection test. Reply with just "OK".',
+  saveErrorCorrupted: "Couldn't save: the stored LLM configuration looks corrupted. Please check it in Settings.",
+  saveErrorWriteFailed: "Couldn't save (you may be out of storage space).",
 
   nameTitle: "Choose a nickname",
   nameIntro:

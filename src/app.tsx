@@ -34,7 +34,7 @@ import { connectNetworkConsumer } from "./lib/network";
 import { loadMyArticles, upsertMyArticle, deleteMyArticle, saveSharedArticle } from "./lib/articleStore";
 import { upsertProgram } from "./lib/programStore";
 import { initKvStore, subscribeKvHydrated } from "./lib/kvStore";
-import { GLOBAL_ARTICLES_ROOM_ID } from "./lib/newsWire";
+import { GLOBAL_ARTICLES_ROOM_ID, cleanupOrphanedRoomKeys } from "./lib/newsWire";
 import { forwardArticleToGlobal } from "./lib/globalArticlesReader";
 import { readHash, writeHash, onHashChange } from "./lib/hashRoute";
 import { useTheme } from "./hooks/useTheme";
@@ -117,6 +117,22 @@ export function App() {
   useEffect(() => {
     void initKvStore();
     return subscribeKvHydrated(() => setArticles(loadMyArticles()));
+  }, []);
+
+  // Startup cleanup for tc-news:shared:<roomId> / tc-news:shared-programs:
+  // <roomId> orphans left behind in localStorage by rooms the user switched
+  // away from (see lib/newsWire.ts's cleanupOrphanedRoomKeys — those caches
+  // now live in the mist KV, migrated lazily per room by useNewsRoom below).
+  // Includes the #room= deep-link target (if any), which the effect further
+  // down applies to settings.roomId right after this one runs, so that
+  // room's own key isn't swept before it gets a chance to migrate.
+  useEffect(() => {
+    const linkedRoom = readHash().room;
+    cleanupOrphanedRoomKeys([settings.roomId, GLOBAL_ARTICLES_ROOM_ID, linkedRoom].filter((id): id is string => !!id));
+    // Mount-only: covers startup state. Rooms joined later in the session
+    // stay safe via useNewsRoom's own per-room migration on load, independent
+    // of this one-shot sweep.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // First-run wizard: shown once on a fresh install, and re-openable from the

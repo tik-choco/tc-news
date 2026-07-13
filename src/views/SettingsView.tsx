@@ -11,12 +11,17 @@
 // llm/network タブはどちらも2層の設定を編集する:
 //   - the co-owned shared config tc-shared-llm-config-v1 (providers/presets/
 //     tts/network.roomId — lib/llmConfig.ts), which other tik-choco apps on
-//     the same origin read and write too, kept in sync here via
-//     subscribeLlmConfig() so an edit made from another app's tab shows up
-//     live;
+//     the same origin read and write too, and which same-tab components
+//     (e.g. the Onboarding overlay) also write to. Every edit here goes
+//     through lib/llmConfigStore.ts's updateLlmConfig() — a read-modify-write
+//     against the *current* storage value, never a stale in-memory `shared`
+//     snapshot — and `shared` state is kept in sync via
+//     subscribeLlmConfigStore() (same-tab writes + other tabs' storage
+//     events; the vendored subscribeLlmConfig() only catches the latter, see
+//     llmConfigStore.ts's header for why that's not enough here);
 //   - tc-news' own local settings (which preset plays which role, plus the
 //     ttsEnabled/networkConsumerEnabled/networkProviderEnabled toggles —
-//     lib/llmSettings.ts).
+//     lib/llmSettings.ts), similarly subscribed via subscribeProviderSettings().
 //
 // The active tab is pure UI state — it must not gate any hook below (the
 // consumer connection effect, the shared-config subscription, etc. all stay
@@ -26,6 +31,7 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
 import type { JSX } from "preact";
 import {
+  AlertTriangle,
   Cpu,
   Network,
   Plug,
@@ -46,18 +52,18 @@ import {
   emptyLlmConfig,
   loadLlmConfig,
   resolvePreset,
-  saveLlmConfig,
-  subscribeLlmConfig,
   type LlmProviderV1,
   type ModelPresetV1,
   type SharedLlmConfigV1,
   type VoiceConfigV1,
 } from "../lib/llmConfig";
+import { isLlmConfigCorrupted, subscribeLlmConfigStore, updateLlmConfig } from "../lib/llmConfigStore";
 import {
   DEFAULT_REASONING_EFFORT,
   loadProviderSettings,
   REASONING_EFFORT_OPTIONS,
   saveProviderSettings,
+  subscribeProviderSettings,
   type ProviderSettings,
 } from "../lib/llmSettings";
 import { requestOnboarding } from "../lib/onboarding";
@@ -263,14 +269,29 @@ export function SettingsView(props: {
     saveSettingsTab(next);
   }
 
-  // tc-news-local role pointers + toggles (lib/llmSettings.ts).
+  // tc-news-local role pointers + toggles (lib/llmSettings.ts). Subscribed
+  // (this tab + other tabs) so an external write to the same key — e.g. the
+  // Onboarding overlay saving networkProviderEnabled — is reflected here too.
   const [provider, setProvider] = useState<ProviderSettings>(() => loadProviderSettings());
+  useEffect(() => subscribeProviderSettings(setProvider), []);
 
-  // The shared, co-owned config (lib/llmConfig.ts) — subscribed so an edit
-  // made from another tc-* app's tab (or another tab of this app) shows up
-  // here without a reload.
+  // The shared, co-owned config (lib/llmConfig.ts) — subscribed via
+  // llmConfigStore's subscribeLlmConfigStore (not the vendored
+  // subscribeLlmConfig) so an edit made from another tc-* app's tab, *or*
+  // from another same-tab component (e.g. the Onboarding overlay), shows up
+  // here without a reload. See llmConfigStore.ts's header for why the
+  // vendored subscribeLlmConfig (storage-event only) isn't enough.
   const [shared, setShared] = useState<SharedLlmConfigV1>(() => loadLlmConfig() ?? emptyLlmConfig());
-  useEffect(() => subscribeLlmConfig((cfg) => setShared(cfg ?? emptyLlmConfig())), []);
+  useEffect(() => subscribeLlmConfigStore((cfg) => setShared(cfg ?? emptyLlmConfig())), []);
+
+  // Corrupted-record / write-failure banners (see llmConfigStore.ts). Once
+  // corrupted it's assumed to stay that way until fixed elsewhere, so the
+  // initial isLlmConfigCorrupted() check is enough; a later successful write
+  // through applyLlmConfigUpdate clears it again (that write only succeeds
+  // once the record is no longer corrupted).
+  const [sharedConfigCorrupted, setSharedConfigCorrupted] = useState(() => isLlmConfigCorrupted());
+  const [llmConfigSaveFailed, setLlmConfigSaveFailed] = useState(false);
+  const [providerSettingsSaveFailed, setProviderSettingsSaveFailed] = useState(false);
 
   function updateGeneral(patch: Partial<AppSettings>) {
     onSettingsChange({ ...settings, ...patch });
@@ -278,12 +299,25 @@ export function SettingsView(props: {
 
   function updateProvider(next: ProviderSettings) {
     setProvider(next);
-    saveProviderSettings(next);
+    setProviderSettingsSaveFailed(!saveProviderSettings(next));
   }
 
-  function updateShared(next: SharedLlmConfigV1) {
-    setShared(next);
-    saveLlmConfig(next);
+  // Always a read-modify-write against the *current* storage value (never a
+  // stale `shared` snapshot) — see llmConfigStore.ts's header for why: a
+  // naive save-the-in-memory-state re-persists whatever `shared` happened to
+  // be captured as, discarding any provider/preset another tab (or another
+  // same-tab component) wrote in the meantime.
+  function applyLlmConfigUpdate(mutate: (config: SharedLlmConfigV1) => void) {
+    const result = updateLlmConfig(mutate);
+    setShared(result.config);
+    if (result.ok) {
+      setLlmConfigSaveFailed(false);
+      setSharedConfigCorrupted(false);
+    } else if (result.reason === "corrupted") {
+      setSharedConfigCorrupted(true);
+    } else {
+      setLlmConfigSaveFailed(true);
+    }
   }
 
   // ----- Providers (shared) --------------------------------------------------
@@ -294,13 +328,15 @@ export function SettingsView(props: {
       baseUrl: "http://localhost:1234/v1",
       apiKey: "",
     };
-    updateShared({ ...shared, providers: [...shared.providers, llmProvider] });
+    applyLlmConfigUpdate((cfg) => {
+      cfg.providers.push(llmProvider);
+    });
   }
 
   function updateLlmProvider(id: string, patch: Partial<LlmProviderV1>) {
-    updateShared({
-      ...shared,
-      providers: shared.providers.map((p) => (p.id === id ? { ...p, ...patch } : p)),
+    applyLlmConfigUpdate((cfg) => {
+      const target = cfg.providers.find((p) => p.id === id);
+      if (target) Object.assign(target, patch);
     });
   }
 
@@ -312,7 +348,9 @@ export function SettingsView(props: {
 
   function deleteLlmProvider(id: string) {
     if (providerInUse(id)) return;
-    updateShared({ ...shared, providers: shared.providers.filter((p) => p.id !== id) });
+    applyLlmConfigUpdate((cfg) => {
+      cfg.providers = cfg.providers.filter((p) => p.id !== id);
+    });
   }
 
   // ----- Presets (shared) -----------------------------------------------------
@@ -327,20 +365,29 @@ export function SettingsView(props: {
       temperature: 0.7,
       reasoningEffort: DEFAULT_REASONING_EFFORT,
     };
-    updateShared({ ...shared, presets: [...shared.presets, preset] });
+    applyLlmConfigUpdate((cfg) => {
+      cfg.presets.push(preset);
+      // 既定が未設定なら、初めて追加したプリセットを自動的に既定にする。
+      if (cfg.defaultPresetId === "") cfg.defaultPresetId = preset.id;
+    });
   }
 
   function updatePreset(id: string, patch: Partial<ModelPresetV1>) {
-    updateShared({
-      ...shared,
-      presets: shared.presets.map((p) => (p.id === id ? { ...p, ...patch } : p)),
+    applyLlmConfigUpdate((cfg) => {
+      const target = cfg.presets.find((p) => p.id === id);
+      if (target) Object.assign(target, patch);
     });
   }
 
   function deletePreset(id: string) {
-    const presets = shared.presets.filter((p) => p.id !== id);
-    const defaultPresetId = shared.defaultPresetId === id ? "" : shared.defaultPresetId;
-    updateShared({ ...shared, presets, defaultPresetId });
+    applyLlmConfigUpdate((cfg) => {
+      cfg.presets = cfg.presets.filter((p) => p.id !== id);
+      // 削除したプリセットが既定だった場合、"" にせず残っているプリセットの
+      // 先頭を新しい既定に昇格させる(残りがなければ ""=未設定)。
+      if (cfg.defaultPresetId === id) {
+        cfg.defaultPresetId = cfg.presets[0]?.id ?? "";
+      }
+    });
     // 役割ポインタが消えたプリセットを指したままにしない("" = 既定に従う)。
     if (provider.orchestratorPresetId === id || provider.workerPresetId === id) {
       updateProvider({
@@ -353,8 +400,10 @@ export function SettingsView(props: {
 
   // ----- TTS (shared VoiceConfigV1 + local enabled toggle) --------------------
   function updateTts(patch: Partial<VoiceConfigV1>) {
-    const current: VoiceConfigV1 = shared.tts ?? { model: "" };
-    updateShared({ ...shared, tts: { ...current, ...patch } });
+    applyLlmConfigUpdate((cfg) => {
+      const current: VoiceConfigV1 = cfg.tts ?? { model: "" };
+      cfg.tts = { ...current, ...patch };
+    });
   }
 
   // TTS falls back to the default preset's provider when it doesn't specify
@@ -455,6 +504,12 @@ export function SettingsView(props: {
             <Volume2 size={14} /> {t("settings.tabTts")}
           </button>
         </div>
+
+        {llmConfigSaveFailed || providerSettingsSaveFailed ? (
+          <p class="settings-alert" role="alert">
+            <AlertTriangle size={14} /> {t("settings.saveFailedWarning")}
+          </p>
+        ) : null}
 
         {tab === "general" ? (
           <section
@@ -585,6 +640,12 @@ export function SettingsView(props: {
             aria-labelledby="settings-tab-llm"
           >
             <p class="field-hint">{t("settings.llmHint")}</p>
+
+            {sharedConfigCorrupted ? (
+              <p class="settings-alert" role="alert">
+                <AlertTriangle size={14} /> {t("settings.sharedConfigCorruptedWarning")}
+              </p>
+            ) : null}
 
             {/* ----- Providers (shared接続情報) ----------------------------- */}
             <div class="settings-heading-row">
@@ -746,7 +807,12 @@ export function SettingsView(props: {
               <span>{t("settings.defaultPreset")}</span>
               <select
                 value={shared.defaultPresetId}
-                onChange={(e) => updateShared({ ...shared, defaultPresetId: e.currentTarget.value })}
+                onChange={(e) => {
+                  const defaultPresetId = e.currentTarget.value;
+                  applyLlmConfigUpdate((cfg) => {
+                    cfg.defaultPresetId = defaultPresetId;
+                  });
+                }}
               >
                 <option value="">{t("settings.defaultPresetUnset")}</option>
                 {shared.presets.map((p) => (
@@ -808,7 +874,12 @@ export function SettingsView(props: {
               <input
                 value={shared.network.roomId}
                 placeholder="tc-llm"
-                onInput={(e) => updateShared({ ...shared, network: { roomId: e.currentTarget.value } })}
+                onInput={(e) => {
+                  const roomId = e.currentTarget.value;
+                  applyLlmConfigUpdate((cfg) => {
+                    cfg.network = { roomId };
+                  });
+                }}
               />
               <span class="field-hint">{t("settings.networkRoomIdHint")}</span>
             </label>

@@ -42,8 +42,12 @@ export function utf8ByteLength(value: string): number {
 
 /** Keys migrated out of localStorage into the mist KV at hydration. Fixed
  * list because the KV has no enumeration — per-room keys (tc-news:shared:*,
- * wirelog, reactionlog) deliberately stay in localStorage (bounded, and
- * still covered by safeStorage's eviction). */
+ * tc-news:shared-programs:*, wirelog, reactionlog, programlog) can't be
+ * enumerated this way since the set of room ids isn't known at boot; they use
+ * kvGetOrMigrate (below) for a lazy, per-key equivalent instead. wirelog /
+ * reactionlog / programlog stay in localStorage entirely (bounded, CID+meta
+ * only, still covered by safeStorage's eviction) — only the two bulky
+ * per-room article/program caches move to the KV. */
 export const KV_MANAGED_KEYS = [
   "tc-news:feed-items",
   "tc-news:articles",
@@ -53,6 +57,7 @@ export const KV_MANAGED_KEYS = [
   "tc-news:page-extracts",
   "tc-news:link-previews",
   "tc-news:evaluations",
+  "tc-news:reactions",
 ];
 
 const mirror = new Map<string, string>();
@@ -134,6 +139,58 @@ export function kvDeleteSync(key: string): void {
       // localStorage unavailable — nothing to delete.
     }
   }
+}
+
+/**
+ * Lazy, per-key equivalent of initKvStore's boot-time migration loop, for
+ * keys whose name isn't known until called (tc-news's per-room `shared:` /
+ * `shared-programs:` caches — the KV has no enumeration, so a fixed
+ * KV_MANAGED_KEYS list only works for keys known in advance). Same conflict
+ * rule as initKvStore, applied to this one key: mirror (already touched this
+ * session) > localStorage (legacy) > mist KV. Idempotent — once the mirror
+ * holds `key`, this and kvGetSync both just return the mirror value, so a
+ * caller may call it again on every load without re-triggering migration or
+ * refetching the KV.
+ */
+export async function kvGetOrMigrate(key: string): Promise<string | null> {
+  if (mirror.has(key)) return mirror.get(key) ?? null;
+
+  let legacyValue: string | null = null;
+  try {
+    legacyValue = localStorage.getItem(key);
+  } catch {
+    legacyValue = null;
+  }
+
+  if (!backendReady) {
+    // Backend not up yet: same stance as kvGetSync's pre-hydration path —
+    // don't seed the mirror, just read localStorage straight through.
+    return legacyValue;
+  }
+
+  if (legacyValue !== null) {
+    mirror.set(key, legacyValue);
+    enqueue(key, legacyValue);
+    try {
+      localStorage.removeItem(key);
+    } catch {
+      // Best-effort; a survivor copy only wastes quota, it can't win over
+      // the KV again unless written anew.
+    }
+    return legacyValue;
+  }
+
+  try {
+    const bytes = await storage_kv_get(key);
+    if (bytes !== undefined) {
+      const value = new TextDecoder().decode(bytes);
+      mirror.set(key, value);
+      return value;
+    }
+  } catch (err) {
+    console.warn(`tc-news: kv read failed for "${key}"`, err);
+  }
+  return null;
 }
 
 export function isKvHydrated(): boolean {

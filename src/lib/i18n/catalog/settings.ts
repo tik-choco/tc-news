@@ -95,6 +95,9 @@ const ja = {
   voiceLoading: "ボイス一覧を取得中...",
   voiceErrorFallback: "ボイス一覧を取得できないため、標準ボイスを表示しています。手入力もできます。",
   voiceFetched: "{count}件のボイスを取得しました。",
+  sharedConfigCorruptedWarning:
+    "共有LLM設定(tc-shared-llm-config-v1)のレコードが壊れているため読み込めません。ここでの編集内容は保存されません。",
+  saveFailedWarning: "設定の保存に失敗しました。ブラウザのストレージ容量が不足している可能性があります。",
 };
 
 const en: typeof ja = {
@@ -188,6 +191,9 @@ const en: typeof ja = {
   voiceLoading: "Loading voice list...",
   voiceErrorFallback: "Couldn't load the voice list — showing the standard voices. You can also enter one manually.",
   voiceFetched: "Fetched {count} voice(s).",
+  sharedConfigCorruptedWarning:
+    "The shared LLM config record (tc-shared-llm-config-v1) is corrupted and can't be loaded. Edits made here won't be saved.",
+  saveFailedWarning: "Failed to save your settings — the browser's storage may be full.",
 };
 
 export const settings = { ja, en };

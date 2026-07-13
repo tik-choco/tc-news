@@ -19,7 +19,8 @@ import {
   X,
 } from "lucide-preact";
 import type { AppSettings } from "../types";
-import { emptyLlmConfig, ensurePreset, ensureProvider, loadLlmConfig, resolvePreset, saveLlmConfig } from "../lib/llmConfig";
+import { emptyLlmConfig, ensurePreset, ensureProvider, loadLlmConfig, resolvePreset } from "../lib/llmConfig";
+import { updateLlmConfig } from "../lib/llmConfigStore";
 import { requestChatCompletion } from "../lib/llm";
 import { ModelField } from "../views/SettingsView";
 import { useT } from "../lib/i18n";
@@ -37,7 +38,12 @@ type TestState =
   | { phase: "idle" }
   | { phase: "busy" }
   | { phase: "ok" }
-  | { phase: "error"; message: string };
+  | { phase: "error"; message: string }
+  // A saveLlmDraft() failure (corrupted shared record, or the write being
+  // silently dropped e.g. by a full storage quota) — distinct from "error"
+  // (a connection-test failure) so the message doesn't get the "接続に失敗
+  // しました" (connection failed) framing for what is actually a save failure.
+  | { phase: "save-error"; reason: "corrupted" | "write-failed" };
 
 function inputValue(event: Event): string {
   return (event.target as HTMLInputElement).value;
@@ -79,42 +85,69 @@ export function Onboarding(props: {
   // so an in-progress edit wouldn't match its own prior save).
   const createdRef = useRef<{ providerId: string; presetId: string } | null>(null);
 
-  /** Persists the draft into the shared config (tc-shared-llm-config-v1), creating
-   * a provider+preset on first save and updating that same pair afterwards.
-   * Sets defaultPresetId only if it was still unset. Returns the preset id so
-   * callers (handleTest) can target it exactly, independent of whatever the
-   * shared default preset is. */
-  function saveLlmDraft(): string {
-    const cfg = loadLlmConfig() ?? emptyLlmConfig();
-    let providerId: string;
-    let presetId: string;
-    if (createdRef.current) {
-      ({ providerId, presetId } = createdRef.current);
-      const provider = cfg.providers.find((p) => p.id === providerId);
-      if (provider) {
-        provider.baseUrl = llm.baseUrl;
-        provider.apiKey = llm.apiKey;
-      }
-      const preset = cfg.presets.find((p) => p.id === presetId);
-      if (preset) preset.model = llm.model.trim();
-    } else {
-      providerId = ensureProvider(cfg, { baseUrl: llm.baseUrl, apiKey: llm.apiKey });
-      presetId = ensurePreset(cfg, { providerId, model: llm.model.trim() });
-      createdRef.current = { providerId, presetId };
+  type SaveLlmDraftResult =
+    | { ok: true; presetId: string | null }
+    | { ok: false; reason: "corrupted" | "write-failed" };
+
+  /** Persists the draft into the shared config (tc-shared-llm-config-v1) via
+   * updateLlmConfig()'s read-modify-write — never a stale in-memory
+   * snapshot — creating a provider+preset on first save and updating that
+   * same pair afterwards. Sets defaultPresetId only if it was still unset.
+   *
+   * A blank (trimmed) base URL is treated as "nothing to save yet" rather
+   * than persisted: ensureProvider("") would otherwise create — and
+   * possibly default-preset — an empty, unusable provider entry the moment
+   * the wizard reaches step 1. `presetId: null` signals callers there's
+   * nothing to test/advance-with yet, distinct from an actual save failure.
+   *
+   * Returns `ok: false` when updateLlmConfig() refused or lost the write
+   * (corrupted shared record, or a silently-dropped write e.g. full storage
+   * quota), so callers can surface that instead of silently proceeding as if
+   * the draft were saved. */
+  function saveLlmDraft(): SaveLlmDraftResult {
+    const baseUrl = llm.baseUrl.trim();
+    if (baseUrl === "") {
+      return { ok: true, presetId: null };
     }
-    if (cfg.defaultPresetId === "") cfg.defaultPresetId = presetId;
-    saveLlmConfig(cfg);
-    return presetId;
+
+    let presetId = "";
+    const result = updateLlmConfig((cfg) => {
+      let providerId: string;
+      if (createdRef.current) {
+        providerId = createdRef.current.providerId;
+        presetId = createdRef.current.presetId;
+        const provider = cfg.providers.find((p) => p.id === providerId);
+        if (provider) {
+          provider.baseUrl = baseUrl;
+          provider.apiKey = llm.apiKey;
+        }
+        const preset = cfg.presets.find((p) => p.id === presetId);
+        if (preset) preset.model = llm.model.trim();
+      } else {
+        providerId = ensureProvider(cfg, { baseUrl, apiKey: llm.apiKey });
+        presetId = ensurePreset(cfg, { providerId, model: llm.model.trim() });
+        createdRef.current = { providerId, presetId };
+      }
+      if (cfg.defaultPresetId === "") cfg.defaultPresetId = presetId;
+    });
+
+    if (!result.ok) return { ok: false, reason: result.reason };
+    return { ok: true, presetId };
   }
 
   async function handleTest() {
     if (testState.phase === "busy") return;
     // Save first so the test exercises the exact same preset lookup real
     // article generation will use afterwards.
-    const presetId = saveLlmDraft();
+    const saveResult = saveLlmDraft();
+    if (!saveResult.ok) {
+      setTestState({ phase: "save-error", reason: saveResult.reason });
+      return;
+    }
+    if (saveResult.presetId === null) return; // blank base URL: nothing to test yet
     setTestState({ phase: "busy" });
     try {
-      await requestChatCompletion(presetId, [{ role: "user", content: t("onboarding.testMessage") }]);
+      await requestChatCompletion(saveResult.presetId, [{ role: "user", content: t("onboarding.testMessage") }]);
       setTestState({ phase: "ok" });
     } catch (error) {
       setTestState({ phase: "error", message: error instanceof Error ? error.message : String(error) });
@@ -122,7 +155,11 @@ export function Onboarding(props: {
   }
 
   function handleLlmNext() {
-    saveLlmDraft();
+    const saveResult = saveLlmDraft();
+    if (!saveResult.ok) {
+      setTestState({ phase: "save-error", reason: saveResult.reason });
+      return;
+    }
     setStep(2);
   }
 
@@ -212,6 +249,15 @@ export function Onboarding(props: {
             </div>
             {testState.phase === "error" && (
               <p class="ob-error">{t("onboarding.testError", { message: testState.message })}</p>
+            )}
+            {testState.phase === "save-error" && (
+              <p class="ob-error">
+                {t(
+                  testState.reason === "corrupted"
+                    ? "onboarding.saveErrorCorrupted"
+                    : "onboarding.saveErrorWriteFailed",
+                )}
+              </p>
             )}
           </div>
         )}

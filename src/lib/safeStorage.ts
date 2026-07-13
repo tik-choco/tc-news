@@ -23,8 +23,18 @@ const EVICTABLE_KEYS = [
   "tc-news:evaluations",
 ];
 
-/** Per-room log/cache keys (`<prefix><roomId>`), evicted after the exact keys. */
-const EVICTABLE_PREFIXES = ["tc-news:wirelog:", "tc-news:reactionlog:"];
+/** Per-room log/cache keys (`<prefix><roomId>`), evicted after the exact keys.
+ * tc-news:shared:/tc-news:shared-programs: are now migrated to the mist KV
+ * (lib/kvStore.ts's kvGetOrMigrate, see lib/newsWire.ts) and normally aren't
+ * in localStorage at all — these two prefixes are a defensive second layer
+ * for the fallback-mode window (backend not ready yet) where kvSetSync still
+ * writes through safeSetItem here. */
+const EVICTABLE_PREFIXES = [
+  "tc-news:wirelog:",
+  "tc-news:reactionlog:",
+  "tc-news:shared:",
+  "tc-news:shared-programs:",
+];
 
 /** Quota errors are reported inconsistently across browsers — match by name
  * and the two legacy codes rather than instanceof alone. */
