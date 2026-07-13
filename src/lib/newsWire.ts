@@ -1,22 +1,31 @@
-// Wire format + localStorage persistence for P2P news-article sharing over
-// mistlib (see hooks/useNewsRoom.ts). Structured article bodies are
-// content-addressed via storage_add() and only the CID + metadata travels
-// on the signed wire — mirrors tc-chat's post-stream wire pattern. Same
-// shape is reused for tc-news:translation wires (see TranslationWire below):
-// a translation is a separate, independently-signed annotation on an
-// article, not a modification of the immutable article record itself.
-// tc-news:reaction (ReactionWire) and tc-news:program (ProgramWire) wires
-// follow the same signed-envelope shape but are intentionally NOT part of
-// the NewsWire union or the article wireLog: reactions are aggregated
-// separately (lib/reactionStore.ts) and replayed to newcomers from their own
-// log (loadReactionLog/appendReactionLog below) so a burst of reactions
-// can't evict article wires from the replay window. Programs reuse the
-// article's CID-on-signed-wire pattern verbatim (loadSharedPrograms /
-// saveSharedPrograms mirror loadSharedArticles / saveSharedArticles) and,
-// like reactions, get their own replay log (loadProgramLog/appendProgramLog)
-// so shared programs reach late joiners without competing with article wires
-// for replay-window slots.
+// Wire format + persistence for P2P news-article sharing over mistlib (see
+// hooks/useNewsRoom.ts). Structured article bodies are content-addressed via
+// storage_add() and only the CID + metadata travels on the signed wire —
+// mirrors tc-chat's post-stream wire pattern. Same shape is reused for
+// tc-news:translation wires (see TranslationWire below): a translation is a
+// separate, independently-signed annotation on an article, not a
+// modification of the immutable article record itself. tc-news:reaction
+// (ReactionWire) and tc-news:program (ProgramWire) wires follow the same
+// signed-envelope shape but are intentionally NOT part of the NewsWire union
+// or the article wireLog: reactions are aggregated separately
+// (lib/reactionStore.ts) and replayed to newcomers from their own log
+// (loadReactionLog/appendReactionLog below) so a burst of reactions can't
+// evict article wires from the replay window. Programs reuse the article's
+// CID-on-signed-wire pattern verbatim (loadSharedPrograms / saveSharedPrograms
+// mirror loadSharedArticles / saveSharedArticles) and, like reactions, get
+// their own replay log (loadProgramLog/appendProgramLog) so shared programs
+// reach late joiners without competing with article wires for replay-window
+// slots.
+//
+// The decoded article/program caches (tc-news:shared:<roomId> /
+// tc-news:shared-programs:<roomId>) are keyed by roomId, which isn't known
+// until a room is joined, so they can't go through kvStore.ts's fixed
+// KV_MANAGED_KEYS boot-time migration — they use kvGetOrMigrate for the same
+// mirror > localStorage(legacy) > mist-KV read, done lazily per room. The
+// wire/reaction/program *logs* below (CID + signature only, no article/
+// program body) stay in localStorage — small and already bounded.
 import type { NewsArticle, ProgramSegment, RadioProgram } from "../types";
+import { kvGetOrMigrate, kvSetSync } from "./kvStore";
 import { safeSetItem } from "./safeStorage";
 
 /** 全ユーザー共通のグローバル記事ルーム。ファミリー他アプリもこの定数値で購読できる(well-known)。 */
@@ -166,9 +175,9 @@ function sanitizeArticle(value: unknown): NewsArticle | null {
   };
 }
 
-export function loadSharedArticles(roomId: string): NewsArticle[] {
+export async function loadSharedArticles(roomId: string): Promise<NewsArticle[]> {
   try {
-    const raw = localStorage.getItem(SHARED_ARTICLES_KEY_PREFIX + roomId);
+    const raw = await kvGetOrMigrate(SHARED_ARTICLES_KEY_PREFIX + roomId);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
@@ -181,7 +190,7 @@ export function loadSharedArticles(roomId: string): NewsArticle[] {
 export function saveSharedArticles(roomId: string, articles: NewsArticle[]): void {
   const sorted = [...articles].sort((a, b) => b.createdAt - a.createdAt);
   const trimmed = sorted.slice(0, MAX_SHARED_ARTICLES);
-  safeSetItem(SHARED_ARTICLES_KEY_PREFIX + roomId, JSON.stringify(trimmed));
+  kvSetSync(SHARED_ARTICLES_KEY_PREFIX + roomId, JSON.stringify(trimmed));
 }
 
 function sanitizeSharedProgramSegment(value: unknown): ProgramSegment | null {
@@ -237,9 +246,9 @@ export function sanitizeSharedProgram(value: unknown): RadioProgram | null {
   return program;
 }
 
-export function loadSharedPrograms(roomId: string): RadioProgram[] {
+export async function loadSharedPrograms(roomId: string): Promise<RadioProgram[]> {
   try {
-    const raw = localStorage.getItem(SHARED_PROGRAMS_KEY_PREFIX + roomId);
+    const raw = await kvGetOrMigrate(SHARED_PROGRAMS_KEY_PREFIX + roomId);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
@@ -252,7 +261,46 @@ export function loadSharedPrograms(roomId: string): RadioProgram[] {
 export function saveSharedPrograms(roomId: string, programs: RadioProgram[]): void {
   const sorted = [...programs].sort((a, b) => b.createdAt - a.createdAt);
   const trimmed = sorted.slice(0, MAX_SHARED_PROGRAMS);
-  safeSetItem(SHARED_PROGRAMS_KEY_PREFIX + roomId, JSON.stringify(trimmed));
+  kvSetSync(SHARED_PROGRAMS_KEY_PREFIX + roomId, JSON.stringify(trimmed));
+}
+
+/**
+ * One-shot startup cleanup for tc-news:shared:<roomId> / tc-news:shared-
+ * programs:<roomId> orphans: with the caches now migrated to the mist KV
+ * (see loadSharedArticles/loadSharedPrograms above), any copy still sitting
+ * in localStorage under these prefixes belongs to a room the user isn't
+ * currently in (kvGetOrMigrate only ever *removes* the legacy localStorage
+ * copy for a room once that room is actually loaded) — most commonly built
+ * up over time by switching settings.roomId or following `#room=` deep
+ * links before this migration existed. `activeRoomIds` (the room(s) about to
+ * be loaded this session) are left alone so their pending migration isn't
+ * short-circuited; every other room's leftover copy is removed outright,
+ * matching the "移動成功を確認してから削除" rule vacuously since active rooms'
+ * migration runs separately via kvGetOrMigrate. The mist KV side isn't
+ * touched here — it has no enumeration (see kvStore.ts) and isn't subject to
+ * the shared origin's localStorage quota, so a stale KV entry for a room the
+ * user left is low-risk and left to age out on its own. */
+export function cleanupOrphanedRoomKeys(activeRoomIds: readonly string[]): void {
+  const active = new Set(activeRoomIds);
+  const prefixes = [SHARED_ARTICLES_KEY_PREFIX, SHARED_PROGRAMS_KEY_PREFIX];
+  try {
+    const toRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const key = localStorage.key(i);
+      if (!key) continue;
+      const prefix = prefixes.find((p) => key.startsWith(p));
+      if (prefix && !active.has(key.slice(prefix.length))) toRemove.push(key);
+    }
+    for (const key of toRemove) {
+      try {
+        localStorage.removeItem(key);
+      } catch {
+        // Best-effort; a survivor orphan just waits for the next startup.
+      }
+    }
+  } catch {
+    // localStorage unavailable — nothing to clean up.
+  }
 }
 
 function isArticleWire(value: unknown): value is ArticleWire {

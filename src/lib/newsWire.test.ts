@@ -1,6 +1,42 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { appendProgramLog, loadProgramLog, sanitizeSharedProgram } from "./newsWire";
+import {
+  appendProgramLog,
+  cleanupOrphanedRoomKeys,
+  loadProgramLog,
+  loadSharedArticles,
+  loadSharedPrograms,
+  sanitizeSharedProgram,
+  saveSharedArticles,
+  saveSharedPrograms,
+} from "./newsWire";
 import type { ProgramWire } from "./newsWire";
+import type { NewsArticle, RadioProgram } from "../types";
+import { resetKvStoreForTests } from "./kvStore";
+
+function article(overrides: Partial<NewsArticle> = {}): NewsArticle {
+  return {
+    id: "article-1",
+    title: "Title",
+    excerpt: "",
+    body: "Body",
+    tags: [],
+    sourceLinks: [],
+    authorDid: "did:key:alice",
+    authorName: "Alice",
+    createdAt: Date.now(),
+    ...overrides,
+  };
+}
+
+function program(overrides: Partial<RadioProgram> = {}): RadioProgram {
+  return {
+    id: "program-1",
+    title: "Morning Briefing",
+    segments: [{ text: "seg one" }],
+    createdAt: Date.now(),
+    ...overrides,
+  };
+}
 
 function baseWireProgram(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -119,6 +155,89 @@ describe("sanitizeSharedProgram", () => {
     expect(program).not.toBeNull();
     expect(program?.segments).toHaveLength(1);
     expect(program?.segments[0].ruby).toBeUndefined();
+  });
+});
+
+describe("loadSharedArticles / saveSharedArticles (per-room mist KV cache)", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    resetKvStoreForTests();
+  });
+
+  it("round-trips articles through save then load", async () => {
+    saveSharedArticles("room-1", [article()]);
+    const loaded = await loadSharedArticles("room-1");
+    expect(loaded).toHaveLength(1);
+    expect(loaded[0].id).toBe("article-1");
+  });
+
+  it("returns an empty array when nothing is stored", async () => {
+    expect(await loadSharedArticles("room-none")).toEqual([]);
+  });
+
+  it("reads a legacy localStorage copy (pre-migration dual-read) when the backend isn't up yet", async () => {
+    localStorage.setItem("tc-news:shared:room-legacy", JSON.stringify([article({ id: "legacy-1" })]));
+    const loaded = await loadSharedArticles("room-legacy");
+    expect(loaded.map((a) => a.id)).toEqual(["legacy-1"]);
+  });
+
+  it("keeps caches independent across different roomIds", async () => {
+    saveSharedArticles("room-a", [article({ id: "a-1" })]);
+    saveSharedArticles("room-b", [article({ id: "b-1" })]);
+    expect((await loadSharedArticles("room-a")).map((a) => a.id)).toEqual(["a-1"]);
+    expect((await loadSharedArticles("room-b")).map((a) => a.id)).toEqual(["b-1"]);
+  });
+
+  it("caps at 200 (MAX_SHARED_ARTICLES), newest createdAt first", async () => {
+    const many = Array.from({ length: 210 }, (_, i) => article({ id: `a-${i}`, createdAt: i }));
+    saveSharedArticles("room-cap", many);
+    const loaded = await loadSharedArticles("room-cap");
+    expect(loaded).toHaveLength(200);
+    expect(loaded[0].id).toBe("a-209");
+    expect(loaded.some((a) => a.id === "a-0")).toBe(false);
+  });
+});
+
+describe("loadSharedPrograms / saveSharedPrograms (per-room mist KV cache)", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    resetKvStoreForTests();
+  });
+
+  it("round-trips programs through save then load", async () => {
+    saveSharedPrograms("room-1", [program()]);
+    const loaded = await loadSharedPrograms("room-1");
+    expect(loaded).toHaveLength(1);
+    expect(loaded[0].id).toBe("program-1");
+  });
+
+  it("returns an empty array when nothing is stored", async () => {
+    expect(await loadSharedPrograms("room-none")).toEqual([]);
+  });
+});
+
+describe("cleanupOrphanedRoomKeys", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    resetKvStoreForTests();
+  });
+
+  it("removes shared:/shared-programs: keys for rooms not in the active set", () => {
+    localStorage.setItem("tc-news:shared:room-old", "[]");
+    localStorage.setItem("tc-news:shared-programs:room-old", "[]");
+    localStorage.setItem("tc-news:shared:room-active", "[]");
+    cleanupOrphanedRoomKeys(["room-active"]);
+    expect(localStorage.getItem("tc-news:shared:room-old")).toBeNull();
+    expect(localStorage.getItem("tc-news:shared-programs:room-old")).toBeNull();
+    expect(localStorage.getItem("tc-news:shared:room-active")).toBe("[]");
+  });
+
+  it("leaves unrelated keys (other prefixes, other apps) untouched", () => {
+    localStorage.setItem("tc-news:wirelog:room-old", "[]");
+    localStorage.setItem("tc-news:app-settings", "{}");
+    cleanupOrphanedRoomKeys([]);
+    expect(localStorage.getItem("tc-news:wirelog:room-old")).toBe("[]");
+    expect(localStorage.getItem("tc-news:app-settings")).toBe("{}");
   });
 });
 

@@ -263,6 +263,9 @@ export const fr: Messages = {
     voiceErrorFallback:
       "Échec du chargement de la liste des voix. Les voix standards sont affichées. Vous pouvez aussi en saisir une manuellement.",
     voiceFetched: "{count} voix récupérée(s).",
+    sharedConfigCorruptedWarning:
+      "L'enregistrement de configuration LLM partagée (tc-shared-llm-config-v1) est corrompu et ne peut pas être chargé. Les modifications effectuées ici ne seront pas enregistrées.",
+    saveFailedWarning: "Échec de l'enregistrement des paramètres. Le stockage du navigateur est peut-être plein.",
   },
 
   errors: {
@@ -330,6 +333,9 @@ export const fr: Messages = {
     testOk: "Connexion établie !",
     testError: "Échec de la connexion : {message}",
     testMessage: "Ceci est un test de connexion. Répondez uniquement par « OK ».",
+    saveErrorCorrupted:
+      "Impossible d'enregistrer : la configuration LLM stockée semble corrompue. Vérifiez-la dans les Paramètres.",
+    saveErrorWriteFailed: "Échec de l'enregistrement (l'espace de stockage est peut-être insuffisant).",
 
     nameTitle: "Choisissez un pseudo",
     nameIntro:

@@ -171,15 +171,38 @@ export function useNewsRoom(roomId: string, userName: string, enabled = true) {
       setPeers(0);
       return;
     }
-    setSharedArticles(loadSharedArticles(roomId));
-    sharedArticlesRef.current = loadSharedArticles(roomId);
-    setSharedPrograms(loadSharedPrograms(roomId));
-    sharedProgramsRef.current = loadSharedPrograms(roomId);
+    setSharedArticles([]);
+    sharedArticlesRef.current = [];
+    setSharedPrograms([]);
+    sharedProgramsRef.current = [];
     setConnected(false);
     setPeers(0);
     const peerIds = new Set<string>();
 
     let cancelled = false;
+
+    // loadSharedArticles/loadSharedPrograms now read through the mist KV
+    // (lib/kvStore.ts's kvGetOrMigrate), so this initial load is async and
+    // can in principle resolve after a wire has already hydrated something
+    // into sharedArticlesRef/sharedProgramsRef below (a fast local KV read
+    // racing a network wire is unlikely, but not impossible) — merge rather
+    // than overwrite so a same-session hydrate never gets clobbered by the
+    // slightly-stale load it raced.
+    Promise.all([loadSharedArticles(roomId), loadSharedPrograms(roomId)]).then(([articles, programs]) => {
+      if (cancelled) return;
+      const mergedArticles = [
+        ...sharedArticlesRef.current,
+        ...articles.filter((a) => !sharedArticlesRef.current.some((x) => x.id === a.id)),
+      ];
+      sharedArticlesRef.current = mergedArticles;
+      setSharedArticles(mergedArticles);
+      const mergedPrograms = [
+        ...sharedProgramsRef.current,
+        ...programs.filter((p) => !sharedProgramsRef.current.some((x) => x.id === p.id)),
+      ];
+      sharedProgramsRef.current = mergedPrograms;
+      setSharedPrograms(mergedPrograms);
+    });
     // The swarm topic is the raw room id itself — no derived/obscured
     // channel id, so any peer joining the same room name lands in the same
     // swarm.

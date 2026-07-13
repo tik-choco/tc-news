@@ -3,6 +3,7 @@
 // shell to re-open the wizard (the overlay lives in app.tsx, above all views).
 
 import { loadMyArticles } from "./articleStore";
+import { loadLlmConfig } from "./llmConfig";
 import { safeSetItem } from "./safeStorage";
 
 const DONE_KEY = "tc-news:onboarding-done";
@@ -23,9 +24,16 @@ export function markOnboardingDone(): void {
 
 /**
  * Whether the wizard should open on launch: only on a genuinely fresh
- * install. An existing install (articles already generated, or app/provider
- * settings already saved, but no flag — i.e. a user from before onboarding
- * shipped) is marked done silently so they're never interrupted.
+ * install. An existing install (articles already generated, app/provider
+ * settings already saved, or a shared LLM config with at least one provider
+ * already present, but no flag — i.e. a user from before onboarding shipped)
+ * is marked done silently so they're never interrupted.
+ *
+ * The shared-config check matters on its own: onboarding writes providers
+ * into tc-shared-llm-config-v1 (co-owned, not tc-news-local), so a reload
+ * between "provider saved" and "wizard's Finish step" must not re-show the
+ * wizard — that reopen was itself part of what made the config-loss bug easy
+ * to trigger.
  */
 export function shouldShowOnboarding(): boolean {
   if (isOnboardingDone()) return false;
@@ -38,6 +46,11 @@ export function shouldShowOnboarding(): boolean {
       localStorage.getItem("tc-news:app-settings") !== null ||
       localStorage.getItem("tc-news:provider-settings") !== null
     ) {
+      markOnboardingDone();
+      return false;
+    }
+    const sharedConfig = loadLlmConfig();
+    if (sharedConfig !== null && sharedConfig.providers.length > 0) {
       markOnboardingDone();
       return false;
     }

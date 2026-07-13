@@ -126,6 +126,20 @@
   font-weight: 700;
 }
 
+/* --- Save-failure / corrupted-record warnings -------------------------------- */
+/* Mirrors the plain colored-text convention used elsewhere for inline errors
+   (.feed-generate-error in generateBar.css, .ob-error in onboarding.css) —
+   no boxed banner, just a danger-colored line with an icon. */
+
+.settings-alert {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--danger-text);
+}
+
 /* --- LLM providers / presets (shared tc-shared-llm-config-v1 entries) -------------------------- */
 
 .profile-list {

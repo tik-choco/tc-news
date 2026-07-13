@@ -1,13 +1,17 @@
 // @vitest-environment happy-dom
 //
-// reactionStore keeps an in-memory cache keyed by the raw localStorage
-// string it was built from (see the module's readAll()), so a bare
-// `localStorage.clear()` in beforeEach is enough to make the cache
-// self-invalidate on the next read — no need for vi.resetModules() or an
-// exported test-only reset hook.
+// reactionStore persists through lib/kvStore.ts (see that module's header),
+// which in fallback mode (no initKvStore() call in this file, so the mist KV
+// backend never comes up) behaves like plain localStorage but backed by an
+// additional in-memory mirror that survives a bare `localStorage.clear()` —
+// so both localStorage.clear() *and* kvStore's resetKvStoreForTests() are
+// needed in beforeEach to get a clean slate. reactionStore also keeps its own
+// in-memory cache keyed by the raw string it was built from (see readAll()),
+// which self-invalidates whenever the underlying kvGetSync value changes.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { addReaction, countsFor, hasReacted, loadReactions, subscribeReactions } from "./reactionStore";
 import type { ReactionRecord } from "./reactionStore";
+import { resetKvStoreForTests } from "./kvStore";
 
 function record(overrides: Partial<ReactionRecord> = {}): ReactionRecord {
   return {
@@ -23,6 +27,7 @@ function record(overrides: Partial<ReactionRecord> = {}): ReactionRecord {
 
 beforeEach(() => {
   localStorage.clear();
+  resetKvStoreForTests();
 });
 
 describe("addReaction / loadReactions", () => {
@@ -66,10 +71,11 @@ describe("addReaction / loadReactions", () => {
     expect(loadReactions()).toHaveLength(1);
   });
 
-  it("re-reads correctly after localStorage.clear() (cache self-invalidates)", () => {
+  it("re-reads correctly after a full reset (localStorage.clear() + resetKvStoreForTests, cache self-invalidates)", () => {
     addReaction(record());
     expect(loadReactions()).toHaveLength(1);
     localStorage.clear();
+    resetKvStoreForTests();
     expect(loadReactions()).toHaveLength(0);
   });
 });

@@ -18,6 +18,7 @@
 // the `profiles` key, which the new shape never has).
 
 import { emptyLlmConfig, ensurePreset, ensureProvider, loadLlmConfig, normalizeBaseUrl, saveLlmConfig } from "./llmConfig";
+import { isLlmConfigCorrupted } from "./llmConfigStore";
 import { safeSetItem } from "./safeStorage";
 
 const SETTINGS_KEY = "tc-news:provider-settings";
@@ -145,8 +146,20 @@ function isPristineDefaultProfile(profile: LegacyProfile): boolean {
  * (protocol/docs/data-contracts/docs/llm-config.md 参照)。ロール参照
  * (orchestrator/worker)とnetworkConsumerEnabled/tts.enabledはtc-news固有の
  * ローカル値なので、そのまま新形式へ運ぶ。
+ *
+ * 共有config(tc-shared-llm-config-v1)が破損している(生キーは存在するのに
+ * loadLlmConfig()がnullを返す)場合は移行そのものを中止しnullを返す。壊れた
+ * レコードの上にemptyLlmConfig()から作ったconfigをsaveLlmConfigで丸ごと
+ * 上書きすると、他アプリが書いた既存providers/presetsを消してしまう
+ * (merge-never-delete違反)ため。
  */
-function migrateLegacySettings(raw: Record<string, unknown>): ProviderSettings {
+function migrateLegacySettings(raw: Record<string, unknown>): ProviderSettings | null {
+  if (isLlmConfigCorrupted()) {
+    console.warn(
+      "tc-news: tc-shared-llm-config-v1 is corrupted — skipping legacy provider-settings migration to avoid overwriting it.",
+    );
+    return null;
+  }
   const cfg = loadLlmConfig() ?? emptyLlmConfig();
 
   const legacyProfiles = Array.isArray(raw.profiles)
@@ -213,6 +226,13 @@ export function loadProviderSettings(): ProviderSettings {
     if (!isRecord(parsed)) return defaultProviderSettings();
     if ("profiles" in parsed) {
       const migrated = migrateLegacySettings(parsed);
+      if (migrated === null) {
+        // 共有configが壊れていて移行を中止した。legacyレコードはそのまま
+        // 残す(=上書きしない)ことで、共有configが直った次回ロード時に
+        // 再度移行を試みられるようにする。
+        console.warn("tc-news: leaving legacy provider-settings record in place; migration will be retried on next load.");
+        return defaultProviderSettings();
+      }
       saveProviderSettings(migrated);
       return migrated;
     }
@@ -222,9 +242,12 @@ export function loadProviderSettings(): ProviderSettings {
   }
 }
 
-export function saveProviderSettings(settings: ProviderSettings): void {
-  safeSetItem(SETTINGS_KEY, JSON.stringify(settings));
+/** 保存に成功したかどうかを返す(safeSetItemの戻り値をそのまま伝播)。
+ * 呼び出し側が失敗をUIに出せるように、この関数自体は例外を投げない。 */
+export function saveProviderSettings(settings: ProviderSettings): boolean {
+  const ok = safeSetItem(SETTINGS_KEY, JSON.stringify(settings));
   for (const listener of listeners) listener(settings);
+  return ok;
 }
 
 // ---- change subscription ----------------------------------------------------

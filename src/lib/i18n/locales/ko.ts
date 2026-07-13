@@ -253,6 +253,9 @@ export const ko: Messages = {
     voiceLoading: "음성 목록을 가져오는 중...",
     voiceErrorFallback: "음성 목록을 가져올 수 없어 기본 음성을 표시하고 있습니다. 직접 입력할 수도 있습니다.",
     voiceFetched: "{count}개의 음성을 가져왔습니다.",
+    sharedConfigCorruptedWarning:
+      "공유 LLM 설정(tc-shared-llm-config-v1) 레코드가 손상되어 불러올 수 없습니다. 여기서 편집한 내용은 저장되지 않습니다.",
+    saveFailedWarning: "설정을 저장하지 못했습니다. 브라우저 저장 공간이 부족할 수 있습니다.",
   },
 
   errors: {
@@ -318,6 +321,8 @@ export const ko: Messages = {
     testOk: "연결되었습니다!",
     testError: "연결에 실패했습니다: {message}",
     testMessage: "연결 테스트입니다. 「OK」라고만 답해 주세요.",
+    saveErrorCorrupted: "저장할 수 없습니다: 저장된 LLM 설정이 손상된 것 같습니다. 설정 화면에서 확인해 주세요.",
+    saveErrorWriteFailed: "저장에 실패했습니다(저장 공간이 부족할 수 있습니다).",
 
     nameTitle: "닉네임 설정",
     nameIntro:

@@ -250,6 +250,9 @@ export const zh: Messages = {
     voiceLoading: "正在获取语音列表...",
     voiceErrorFallback: "无法获取语音列表，已显示标准语音。您也可以手动输入。",
     voiceFetched: "已获取 {count} 个语音。",
+    sharedConfigCorruptedWarning:
+      "共享LLM设置(tc-shared-llm-config-v1)记录已损坏，无法加载。此处所做的编辑将不会被保存。",
+    saveFailedWarning: "设置保存失败。浏览器存储空间可能已满。",
   },
 
   errors: {
@@ -315,6 +318,8 @@ export const zh: Messages = {
     testOk: "连接成功!",
     testError: "连接失败: {message}",
     testMessage: "这是一次连接测试，请只回复「OK」。",
+    saveErrorCorrupted: "无法保存：存储的 LLM 配置似乎已损坏。请在设置页面检查。",
+    saveErrorWriteFailed: "保存失败(存储空间可能不足)。",
 
     nameTitle: "设置昵称",
     nameIntro:

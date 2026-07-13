@@ -17,7 +17,8 @@ import {
   useNetworkProvider,
   type UseNetworkProviderResult,
 } from "../lib/network";
-import { emptyLlmConfig, loadLlmConfig, resolvePreset, subscribeLlmConfig, type SharedLlmConfigV1 } from "../lib/llmConfig";
+import { emptyLlmConfig, loadLlmConfig, resolvePreset, type SharedLlmConfigV1 } from "../lib/llmConfig";
+import { subscribeLlmConfigStore } from "../lib/llmConfigStore";
 import { loadProviderSettings, subscribeProviderSettings, type ProviderSettings } from "../lib/llmSettings";
 import { requestApiChatCompletionStreaming } from "../lib/llm";
 import { tGlobal } from "../lib/i18n";
@@ -27,7 +28,11 @@ export function useNetworkProviderHost(): UseNetworkProviderResult {
   useEffect(() => subscribeProviderSettings(setLocal), []);
 
   const [cfg, setCfg] = useState<SharedLlmConfigV1>(() => loadLlmConfig() ?? emptyLlmConfig());
-  useEffect(() => subscribeLlmConfig((next) => setCfg(next ?? emptyLlmConfig())), []);
+  // subscribeLlmConfigStore (not the vendored subscribeLlmConfig) so a save
+  // made in the same tab — e.g. SettingsView or the Onboarding wizard — is
+  // picked up immediately instead of only on the next cross-tab `storage`
+  // event.
+  useEffect(() => subscribeLlmConfigStore((next) => setCfg(next ?? emptyLlmConfig())), []);
 
   // Debounced so typing a room id in SettingsView doesn't rejoin the room on
   // every keystroke (mirrors the consumer connection's 500ms debounce there).
