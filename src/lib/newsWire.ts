@@ -15,7 +15,15 @@
 // mirror loadSharedArticles / saveSharedArticles) and, like reactions, get
 // their own replay log (loadProgramLog/appendProgramLog) so shared programs
 // reach late joiners without competing with article wires for replay-window
-// slots.
+// slots. tc-news:feed-share (FeedShareWire) follows the same signed-envelope
+// shape too, but unlike articles/programs it carries its full payload (url +
+// label) inline rather than a CID — both fields are small enough that
+// content-addressing them would just add a storage_add/storage_get round trip
+// for no benefit. It gets its own replay log (loadFeedShareLog/
+// appendFeedShareLog) for the same reason reactions and programs do, and
+// since the wire *is* the payload, that log doubles as the source of the
+// in-memory sharedFeeds list in hooks/useNewsRoom.ts (no separate KV-backed
+// cache needed, unlike loadSharedArticles/loadSharedPrograms below).
 //
 // The decoded article/program caches (tc-news:shared:<roomId> /
 // tc-news:shared-programs:<roomId>) are keyed by roomId, which isn't known
@@ -116,16 +124,38 @@ export interface ProgramWire extends Record<string, unknown> {
   fromApp?: string;
 }
 
+/**
+ * フィードURLをP2P共有するワイヤ。url/labelはCID化するには小さすぎるため、
+ * ArticleWire/ProgramWireと違い本体をそのままワイヤに載せる(署名対象にも
+ * url/labelを含む — wireSign.tsのsignWireFields/verifyWireはsignatureを除く
+ * 全フィールドを対称にstableStringifyするので、これらのフィールドを検証すれば
+ * 改ざんを検出できる)。同じURLが複数回共有され得るため、idはurl由来ではなく
+ * wire固有のuuid(newFeedShareWireId)。
+ */
+export interface FeedShareWire extends Record<string, unknown> {
+  type: "tc-news:feed-share";
+  id: string; // ワイヤの一意id(uuid) — urlではない
+  url: string;
+  label: string;
+  fromId: string; // 送信者DID
+  fromName: string;
+  timestamp: number;
+  signature: string;
+  fromApp?: string;
+}
+
 const SHARED_ARTICLES_KEY_PREFIX = "tc-news:shared:";
 const WIRE_LOG_KEY_PREFIX = "tc-news:wirelog:";
 const SHARED_PROGRAMS_KEY_PREFIX = "tc-news:shared-programs:";
 const REACTION_LOG_KEY_PREFIX = "tc-news:reactionlog:";
 const PROGRAM_LOG_KEY_PREFIX = "tc-news:programlog:";
+const FEED_SHARE_LOG_KEY_PREFIX = "tc-news:feedlog:";
 const MAX_SHARED_ARTICLES = 200;
 const MAX_WIRE_LOG = 300;
 const MAX_SHARED_PROGRAMS = 100;
 const MAX_REACTION_LOG = 1000;
 const MAX_PROGRAM_LOG = 100;
+const MAX_FEED_SHARE_LOG = 200;
 
 export function newTranslationWireId(): string {
   try {
@@ -140,6 +170,14 @@ export function newReactionWireId(): string {
     return crypto.randomUUID();
   } catch {
     return `reaction-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  }
+}
+
+export function newFeedShareWireId(): string {
+  try {
+    return crypto.randomUUID();
+  } catch {
+    return `feed-share-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   }
 }
 
@@ -369,6 +407,22 @@ export function isProgramWire(value: unknown): value is ProgramWire {
   );
 }
 
+export function isFeedShareWire(value: unknown): value is FeedShareWire {
+  if (!value || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  return (
+    v.type === "tc-news:feed-share" &&
+    typeof v.id === "string" &&
+    typeof v.url === "string" &&
+    typeof v.label === "string" &&
+    typeof v.fromId === "string" &&
+    typeof v.fromName === "string" &&
+    typeof v.timestamp === "number" &&
+    typeof v.signature === "string" &&
+    (v.fromApp === undefined || typeof v.fromApp === "string")
+  );
+}
+
 export function loadWireLog(roomId: string): NewsWire[] {
   try {
     const raw = localStorage.getItem(WIRE_LOG_KEY_PREFIX + roomId);
@@ -442,4 +496,31 @@ export function appendProgramLog(roomId: string, wire: ProgramWire): void {
   const next = [...log, wire];
   const trimmed = next.length > MAX_PROGRAM_LOG ? next.slice(next.length - MAX_PROGRAM_LOG) : next;
   safeSetItem(PROGRAM_LOG_KEY_PREFIX + roomId, JSON.stringify(trimmed));
+}
+
+/**
+ * フィード共有ワイヤの履歴ログ(新規参加者へのリプレイ用)。他のログと同じく
+ * 専用キーで保持する — ワイヤ自体がurl/labelを直接運ぶので(CIDなし)、この
+ * ログがそのまま「現在共有されているフィード一覧」の情報源にもなる
+ * (hooks/useNewsRoom.tsのsharedFeeds初期化を参照)。
+ */
+export function loadFeedShareLog(roomId: string): FeedShareWire[] {
+  try {
+    const raw = localStorage.getItem(FEED_SHARE_LOG_KEY_PREFIX + roomId);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(isFeedShareWire);
+  } catch {
+    return [];
+  }
+}
+
+/** フィード共有ワイヤをwire idでデデュープして記録する(新しい順に上限件数で切り詰め)。 */
+export function appendFeedShareLog(roomId: string, wire: FeedShareWire): void {
+  const log = loadFeedShareLog(roomId);
+  if (log.some((w) => w.id === wire.id)) return;
+  const next = [...log, wire];
+  const trimmed = next.length > MAX_FEED_SHARE_LOG ? next.slice(next.length - MAX_FEED_SHARE_LOG) : next;
+  safeSetItem(FEED_SHARE_LOG_KEY_PREFIX + roomId, JSON.stringify(trimmed));
 }

@@ -150,8 +150,18 @@ export function App() {
   // userName未設定時の表示名はローカライズされた「匿名」。
   const displayName = settings.userName.trim() || t("common.anonymous");
 
-  const { sharedArticles, sharedPrograms, share, shareTranslation, shareProgram, sendReaction, connected, peers } =
-    useNewsRoom(settings.roomId, displayName);
+  const {
+    sharedArticles,
+    sharedPrograms,
+    sharedFeeds,
+    share,
+    shareTranslation,
+    shareProgram,
+    sendReaction,
+    shareFeed,
+    connected,
+    peers,
+  } = useNewsRoom(settings.roomId, displayName);
   // The private room *is* the global room when the user pointed settings.roomId
   // at it directly — avoid double-joining by disabling this hook in that case
   // (useNewsRoom resets to the empty/disconnected shape when enabled=false).
@@ -466,6 +476,11 @@ export function App() {
               source === "room"
                 ? sendReaction(targetId, targetType, kind)
                 : globalRoom.sendReaction(targetId, targetType, kind)
+            }
+            roomSharedFeeds={sharedFeeds}
+            globalSharedFeeds={globalRoom.sharedFeeds}
+            onShareFeed={(url: string, label: string, source: "room" | "global") =>
+              source === "room" ? shareFeed(url, label) : globalRoom.shareFeed(url, label)
             }
           />
         )}

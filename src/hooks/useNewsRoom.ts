@@ -17,22 +17,27 @@ import {
 import { ensureDidIdentity } from "../crypto/didIdentity";
 import { signWireFields, verifyWire } from "../lib/wireSign";
 import {
+  appendFeedShareLog,
   appendProgramLog,
   appendReactionLog,
   appendWireLog,
+  isFeedShareWire,
   isProgramWire,
   isReactionWire,
+  loadFeedShareLog,
   loadProgramLog,
   loadReactionLog,
   loadSharedArticles,
   loadSharedPrograms,
   loadWireLog,
+  newFeedShareWireId,
   newReactionWireId,
   newTranslationWireId,
   sanitizeSharedProgram,
   saveSharedArticles,
   saveSharedPrograms,
   type ArticleWire,
+  type FeedShareWire,
   type HistoryRequestWire,
   type ProgramWire,
   type ReactionWire,
@@ -148,11 +153,13 @@ function sanitizeSharedArticleCandidate(value: unknown): NewsArticle | null {
 export function useNewsRoom(roomId: string, userName: string, enabled = true) {
   const [sharedArticles, setSharedArticles] = useState<NewsArticle[]>([]);
   const [sharedPrograms, setSharedPrograms] = useState<RadioProgram[]>([]);
+  const [sharedFeeds, setSharedFeeds] = useState<FeedShareWire[]>([]);
   const [connected, setConnected] = useState(false);
   const [peers, setPeers] = useState(0);
 
   const sharedArticlesRef = useRef<NewsArticle[]>([]);
   const sharedProgramsRef = useRef<RadioProgram[]>([]);
+  const sharedFeedsRef = useRef<FeedShareWire[]>([]);
   const roomIdRef = useRef(roomId);
   roomIdRef.current = roomId;
   const userNameRef = useRef(userName);
@@ -167,6 +174,8 @@ export function useNewsRoom(roomId: string, userName: string, enabled = true) {
       sharedArticlesRef.current = [];
       setSharedPrograms([]);
       sharedProgramsRef.current = [];
+      setSharedFeeds([]);
+      sharedFeedsRef.current = [];
       setConnected(false);
       setPeers(0);
       return;
@@ -177,6 +186,14 @@ export function useNewsRoom(roomId: string, userName: string, enabled = true) {
     sharedProgramsRef.current = [];
     setConnected(false);
     setPeers(0);
+    // Unlike sharedArticles/sharedPrograms (mist KV-backed, hydrated async
+    // below), feed-share wires carry their full payload inline (see
+    // newsWire.ts's FeedShareWire) — the replay log already *is* the full
+    // record, so it can be read synchronously here instead of racing an async
+    // load like the Promise.all below does for articles/programs.
+    const initialFeeds = loadFeedShareLog(roomId);
+    sharedFeedsRef.current = initialFeeds;
+    setSharedFeeds(initialFeeds);
     const peerIds = new Set<string>();
 
     let cancelled = false;
@@ -222,6 +239,14 @@ export function useNewsRoom(roomId: string, userName: string, enabled = true) {
       sharedProgramsRef.current = next;
       saveSharedPrograms(roomId, next);
       setSharedPrograms(next);
+    }
+
+    // No saveSharedFeeds counterpart: appendFeedShareLog (called by both
+    // hydrateFeedShare and shareFeed below) is already the persistence layer
+    // for feed-share wires — this just keeps in-memory state in sync with it.
+    function commitSharedFeeds(next: FeedShareWire[]) {
+      sharedFeedsRef.current = next;
+      setSharedFeeds(next);
     }
 
     async function hydrateArticle(wire: ArticleWire) {
@@ -306,6 +331,29 @@ export function useNewsRoom(roomId: string, userName: string, enabled = true) {
       }
     }
 
+    // Like reactions, feed-share wires carry no CID — the wire *is* the
+    // payload, so there's no storage_get hop and no authorDid cross-check
+    // (there's nothing to cross-check against; url/label just travel signed).
+    // Dedup is by wire id (not url): the same feed can legitimately be
+    // reshared by different peers, or re-shared later with an updated label,
+    // and each such wire is its own entry in the list — it's importSharedFeed
+    // (lib/feedShare.ts) that de-dupes by URL when a user actually imports
+    // one into their own feed list.
+    async function hydrateFeedShare(wire: FeedShareWire) {
+      try {
+        if (sharedFeedsRef.current.some((w) => w.id === wire.id)) return; // duplicate wire, ignore
+        if (!(await verifyWire(wire))) {
+          console.warn("discarding feed-share wire with invalid signature", wire.id);
+          return;
+        }
+        appendFeedShareLog(roomId, wire);
+        if (cancelled) return;
+        commitSharedFeeds([wire, ...sharedFeedsRef.current]);
+      } catch (err) {
+        console.error("failed to hydrate shared feed", err);
+      }
+    }
+
     // Reactions carry no CID — the wire *is* the payload. The wire guard only
     // checks kind is a string (so unknown future kinds don't break wire
     // validation); membership in REACTION_KINDS is the semantic check here.
@@ -349,7 +397,18 @@ export function useNewsRoom(roomId: string, userName: string, enabled = true) {
       // log and reaction log so none of the three bursts onto the link at
       // once.
       const programLog = loadProgramLog(roomId);
-      if (log.length === 0 && reactionLog.length === 0 && programLog.length === 0) return;
+      // Feed-share wires also live in their own log (see hydrateFeedShare
+      // above) and ride the same staggered replay, continuing after the wire/
+      // reaction/program logs so none of the four bursts onto the link at
+      // once.
+      const feedShareLog = loadFeedShareLog(roomId);
+      if (
+        log.length === 0 &&
+        reactionLog.length === 0 &&
+        programLog.length === 0 &&
+        feedShareLog.length === 0
+      )
+        return;
       getNode().then((node) => {
         log.forEach((wire, index) => {
           setTimeout(() => {
@@ -369,6 +428,12 @@ export function useNewsRoom(roomId: string, userName: string, enabled = true) {
             node.sendMessage(requesterId, wire, DELIVERY_RELIABLE, channelId);
           }, (log.length + reactionLog.length + index) * REPLAY_STAGGER_MS);
         });
+        feedShareLog.forEach((wire, index) => {
+          setTimeout(() => {
+            if (cancelled) return;
+            node.sendMessage(requesterId, wire, DELIVERY_RELIABLE, channelId);
+          }, (log.length + reactionLog.length + programLog.length + index) * REPLAY_STAGGER_MS);
+        });
       });
     }
 
@@ -385,6 +450,8 @@ export function useNewsRoom(roomId: string, userName: string, enabled = true) {
           hydrateProgram(decoded);
         } else if (isReactionWire(decoded)) {
           hydrateReaction(decoded);
+        } else if (isFeedShareWire(decoded)) {
+          hydrateFeedShare(decoded);
         } else if (isHistoryRequestPayload(decoded)) {
           replayHistoryTo(fromId);
         }
@@ -612,5 +679,41 @@ export function useNewsRoom(roomId: string, userName: string, enabled = true) {
     });
   }
 
-  return { sharedArticles, sharedPrograms, share, shareTranslation, shareProgram, sendReaction, connected, peers };
+  // A feed-share wire is self-contained (no CID hop), mirroring sendReaction:
+  // it goes on the wire, into the room's feed-share replay log, and straight
+  // into local state so the sender's own UI shows it without waiting for an
+  // echo.
+  async function shareFeed(url: string, label: string): Promise<void> {
+    const node = await getNode();
+    const identity = await ensureDidIdentity();
+    const unsigned = {
+      type: "tc-news:feed-share" as const,
+      id: newFeedShareWireId(),
+      url,
+      label,
+      fromId: identity.did,
+      fromName: userNameRef.current,
+      timestamp: Date.now(),
+      fromApp: "tc-news",
+    };
+    const wire: FeedShareWire = { ...unsigned, signature: await signWireFields(unsigned) };
+    node.sendMessage(null, wire, DELIVERY_RELIABLE, roomIdRef.current);
+    appendFeedShareLog(roomIdRef.current, wire);
+    const next = [wire, ...sharedFeedsRef.current.filter((w) => w.id !== wire.id)];
+    sharedFeedsRef.current = next;
+    setSharedFeeds(next);
+  }
+
+  return {
+    sharedArticles,
+    sharedPrograms,
+    sharedFeeds,
+    share,
+    shareTranslation,
+    shareProgram,
+    sendReaction,
+    shareFeed,
+    connected,
+    peers,
+  };
 }
