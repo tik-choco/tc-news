@@ -18,13 +18,15 @@ function coerceFeedSource(value: unknown): FeedSource | null {
   if (!value || typeof value !== "object") return null;
   const s = value as Record<string, unknown>;
   if (typeof s.id !== "string" || typeof s.url !== "string") return null;
-  return {
+  const source: FeedSource = {
     id: s.id,
     url: s.url,
     label: typeof s.label === "string" ? s.label : s.url,
     enabled: typeof s.enabled === "boolean" ? s.enabled : true,
     addedAt: typeof s.addedAt === "number" ? s.addedAt : Date.now(),
   };
+  if (typeof s.autoLabel === "boolean") source.autoLabel = s.autoLabel;
+  return source;
 }
 
 function coerceFeedItem(value: unknown): FeedItem | null {

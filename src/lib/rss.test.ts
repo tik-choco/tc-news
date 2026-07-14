@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchFeedItems, parseFeedXml } from "./rss";
+import { fetchFeedItems, fetchFeedTitle, parseFeedTitle, parseFeedXml } from "./rss";
 import { tGlobal } from "./i18n";
 import type { FeedSource } from "../types";
 
@@ -219,6 +219,72 @@ describe("parseFeedXml", () => {
 </rss>`;
     const items = parseFeedXml(xml, makeSource());
     expect(items[0].imageUrl).toBe("https://example.com/thumbs/rel.jpg");
+  });
+});
+
+describe("parseFeedTitle", () => {
+  it("extracts the channel title from RSS 2.0", () => {
+    expect(parseFeedTitle(RSS2_XML)).toBe("Example Channel");
+  });
+
+  it("extracts the feed title from Atom, not an entry's own title", () => {
+    expect(parseFeedTitle(ATOM_XML)).toBe("Example Atom Feed");
+  });
+
+  it("extracts the channel title from RSS 1.0 / RDF feeds", () => {
+    const rdfXml = `<?xml version="1.0"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns="http://purl.org/rss/1.0/">
+  <channel rdf:about="https://example.com/">
+    <title>Example RDF Channel</title>
+    <link>https://example.com</link>
+  </channel>
+  <item rdf:about="https://example.com/articles/first">
+    <title>First Article</title>
+    <link>https://example.com/articles/first</link>
+  </item>
+</rdf:RDF>`;
+    expect(parseFeedTitle(rdfXml)).toBe("Example RDF Channel");
+  });
+
+  it("returns null for XML with neither a channel nor a feed title", () => {
+    expect(parseFeedTitle("<rss><channel></channel></rss>")).toBeNull();
+  });
+
+  it("returns null for unparseable XML", () => {
+    expect(parseFeedTitle("not xml at all <<<")).toBeNull();
+  });
+});
+
+describe("fetchFeedTitle", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("resolves the feed's title on a successful direct fetch", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, status: 200, text: async () => RSS2_XML }),
+    );
+    await expect(fetchFeedTitle("https://example.com/feed.xml", "")).resolves.toBe("Example Channel");
+  });
+
+  it("falls back to the CORS proxy on a direct network-layer failure and still resolves the title", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+      .mockResolvedValueOnce({ ok: true, status: 200, text: async () => ATOM_XML });
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(
+      fetchFeedTitle("https://example.com/feed.xml", "https://proxy.example.com/?url="),
+    ).resolves.toBe("Example Atom Feed");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("resolves null (never throws) when both the direct and proxied fetch fail", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
+    await expect(
+      fetchFeedTitle("https://example.com/feed.xml", "https://proxy.example.com/?url="),
+    ).resolves.toBeNull();
   });
 });
 

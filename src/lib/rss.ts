@@ -314,15 +314,45 @@ export function parseFeedXml(xml: string, source: FeedSource, now: number = Date
   return [];
 }
 
+/** Extracts the feed-wide title (not an item/entry title) for auto-labeling
+ * a newly added source. `channel > title` covers both RSS 2.0 and RSS
+ * 1.0/RDF (whose <channel> is a direct child of the <rdf:RDF> root, in the
+ * feed's default namespace, so the unprefixed selector still matches).
+ * `feed > title` covers Atom — a direct-child selector so it doesn't pick up
+ * an <entry>'s own <title> instead. Returns null for unparseable XML or a
+ * feed with no discoverable title. */
+export function parseFeedTitle(xml: string): string | null {
+  let doc: Document;
+  try {
+    doc = new DOMParser().parseFromString(xml, "text/xml");
+  } catch {
+    return null;
+  }
+  if (doc.querySelector("parsererror")) return null;
+
+  const channelTitle = textOf(doc.querySelector("channel > title"));
+  if (channelTitle) return channelTitle;
+
+  const feedTitle = textOf(doc.querySelector("feed > title"));
+  if (feedTitle) return feedTitle;
+
+  return null;
+}
+
 async function tryFetchText(url: string): Promise<string> {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.text();
 }
 
-/** Fetches a feed directly; on any failure (network error or non-2xx),
- * retries once through the configured CORS proxy before giving up. */
-export async function fetchFeedItems(source: FeedSource, corsProxy: string): Promise<FeedItem[]> {
+/** Fetches `url` directly; on any failure (network error or non-2xx),
+ * retries once through `corsProxy` (if configured) before giving up. Shared
+ * by fetchFeedItems and fetchFeedTitle so both get the same direct→proxy
+ * fallback behavior. */
+async function fetchXmlWithProxyFallback(
+  url: string,
+  corsProxy: string,
+): Promise<{ xml: string | null; directFailedAsNetworkError: boolean; lastError: unknown }> {
   let xml: string | null = null;
   let lastError: unknown = null;
   // TypeError is what fetch() throws for network-layer failures (a CORS
@@ -331,7 +361,7 @@ export async function fetchFeedItems(source: FeedSource, corsProxy: string): Pro
   let directFailedAsNetworkError = false;
 
   try {
-    xml = await tryFetchText(source.url);
+    xml = await tryFetchText(url);
   } catch (err) {
     lastError = err;
     directFailedAsNetworkError = err instanceof TypeError;
@@ -339,11 +369,19 @@ export async function fetchFeedItems(source: FeedSource, corsProxy: string): Pro
 
   if (xml === null && corsProxy) {
     try {
-      xml = await tryFetchText(corsProxy + encodeURIComponent(source.url));
+      xml = await tryFetchText(corsProxy + encodeURIComponent(url));
     } catch (err) {
       lastError = err;
     }
   }
+
+  return { xml, directFailedAsNetworkError, lastError };
+}
+
+/** Fetches a feed directly; on any failure (network error or non-2xx),
+ * retries once through the configured CORS proxy before giving up. */
+export async function fetchFeedItems(source: FeedSource, corsProxy: string): Promise<FeedItem[]> {
+  const { xml, directFailedAsNetworkError, lastError } = await fetchXmlWithProxyFallback(source.url, corsProxy);
 
   if (xml === null) {
     // Direct fetch failed at the network layer and there's no proxy
@@ -358,4 +396,14 @@ export async function fetchFeedItems(source: FeedSource, corsProxy: string): Pro
   }
 
   return parseFeedXml(xml, source, Date.now());
+}
+
+/** Best-effort fetch of a feed's title, for auto-populating a newly added
+ * source's label. Unlike fetchFeedItems, failures resolve to null instead of
+ * throwing — a missing title just leaves the caller's placeholder label in
+ * place, which is not worth surfacing as an error. */
+export async function fetchFeedTitle(url: string, corsProxy: string): Promise<string | null> {
+  const { xml } = await fetchXmlWithProxyFallback(url, corsProxy);
+  if (xml === null) return null;
+  return parseFeedTitle(xml);
 }

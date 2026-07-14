@@ -4,6 +4,10 @@ export interface FeedSource {
   label: string;
   enabled: boolean;
   addedAt: number;
+  // labelが手入力ではなくフィード自体の<title>から自動取得されたものであるかを
+  // 示す。trueの間はfetchFeedTitle成功時にlabelを上書きしてよい。ユーザーが
+  // labelを手動編集した時点でfalseにする(lib/hooks/useFeeds.ts参照)。
+  autoLabel?: boolean;
 }
 
 export interface FeedItem {

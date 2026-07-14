@@ -7,11 +7,14 @@ import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { JSX } from "preact";
 import {
   ArrowLeft,
+  Download,
   Globe,
   Languages,
   MessagesSquare,
+  Rss,
   Save,
   Send,
+  Share2,
   Trophy,
   Users,
   Volume2,
@@ -23,7 +26,7 @@ import { ArticleReader } from "../components/ArticleReader";
 import { EmptyState } from "../components/EmptyState";
 import { ReactionBar } from "../components/ReactionBar";
 import { LOCALE_LABELS, useLocale, useT, type Locale } from "../lib/i18n";
-import { GLOBAL_ARTICLES_ROOM_ID } from "../lib/newsWire";
+import { GLOBAL_ARTICLES_ROOM_ID, type FeedShareWire } from "../lib/newsWire";
 import { isMuted, loadMutedDids, muteDid, unmuteDid } from "../lib/muteStore";
 import { ARTICLE_CATEGORIES, categoryLabelKey, coerceCategory, type ArticleCategory } from "../lib/categories";
 import { chatUrl } from "../lib/chatShare";
@@ -34,6 +37,8 @@ import { loadReactions, subscribeReactions } from "../lib/reactionStore";
 import { computeDailyRanking, type RankingEntry } from "../lib/ranking";
 import { loadMyArticles } from "../lib/articleStore";
 import { loadPrograms } from "../lib/programStore";
+import { loadFeeds } from "../lib/feedStore";
+import { importSharedFeed, isFeedAlreadyImported } from "../lib/feedShare";
 import { subscribeKvHydrated } from "../lib/kvStore";
 import "../styles/components.css";
 import "../styles/shared.css";
@@ -71,6 +76,13 @@ export function SharedView(props: {
     kind: ReactionKind,
     source: Source,
   ) => Promise<void>;
+  /** フィード共有ワイヤ一覧(ソースごと)。hooks/useNewsRoom.tsのsharedFeeds
+   * をroom/globalそれぞれから受け取る — articles/programsと同じ二系統構成。 */
+  roomSharedFeeds: FeedShareWire[];
+  globalSharedFeeds: FeedShareWire[];
+  /** 自分のフィードをroom/globalいずれかへ共有する(hooks/useNewsRoom.tsの
+   * shareFeed)。source引数で送り先を切り替える点はonReactと同じ。 */
+  onShareFeed: (url: string, label: string, source: Source) => Promise<void>;
 }): JSX.Element {
   const {
     roomId,
@@ -91,6 +103,9 @@ export function SharedView(props: {
     myDid,
     sharedPrograms,
     onReact,
+    roomSharedFeeds,
+    globalSharedFeeds,
+    onShareFeed,
   } = props;
   const t = useT();
   const { locale } = useLocale();
@@ -132,6 +147,31 @@ export function SharedView(props: {
   // read. Bump this on hydration so the memos below re-derive.
   const [kvHydratedTick, bumpKvHydratedTick] = useState(0);
   useEffect(() => subscribeKvHydrated(() => bumpKvHydratedTick((n) => n + 1)), []);
+
+  // 自分のフィード一覧(共有フォームのプルダウン用)+ 取り込み済みバッジの
+  // 判定に使う。useFeeds()には依存せず(FeedManageSidebar/useFeeds.tsは並列
+  // ワーカーが編集中で触れない)、feedStore.tsを直読みする。他所での追加
+  // (自分でフィード管理画面から追加/このビューでの取り込み)はどちらも
+  // "tc-news:feeds-updated" をdispatchする契約なので、それを購読して
+  // 再読み込みする(useFeeds.ts自身の購読と同じパターン)。
+  const [feedsTick, bumpFeedsTick] = useState(0);
+  useEffect(() => {
+    function handleFeedsUpdated() {
+      bumpFeedsTick((n) => n + 1);
+    }
+    window.addEventListener("tc-news:feeds-updated", handleFeedsUpdated);
+    return () => window.removeEventListener("tc-news:feeds-updated", handleFeedsUpdated);
+  }, []);
+  const myFeeds = useMemo(() => loadFeeds(), [feedsTick]);
+
+  // 共有フィードのフォーム状態: 既存の自分のフィードから選ぶか、URL+ラベルを
+  // 直接入力するかの2モード。
+  const [shareFeedMode, setShareFeedMode] = useState<"pick" | "url">("pick");
+  const [showShareFeedForm, setShowShareFeedForm] = useState(false);
+  const [pickedFeedId, setPickedFeedId] = useState("");
+  const [shareFeedUrl, setShareFeedUrl] = useState("");
+  const [shareFeedLabel, setShareFeedLabel] = useState("");
+  const [shareFeedBusy, setShareFeedBusy] = useState(false);
 
   useEffect(() => {
     return () => {
@@ -244,6 +284,34 @@ export function SharedView(props: {
     }
   }
 
+  function handleImportFeed(wire: FeedShareWire) {
+    const result = importSharedFeed(wire.url, wire.label);
+    // A successful import dispatches "tc-news:feeds-updated", which the
+    // effect above is subscribed to — myFeeds (and therefore the imported
+    // badge below) refreshes on its own, no manual bump needed here.
+    showNotice(result.imported ? "shared.feedImported" : "shared.feedAlreadyImported");
+  }
+
+  async function handleShareFeed() {
+    const picked = shareFeedMode === "pick" ? myFeeds.find((f) => f.id === pickedFeedId) : undefined;
+    const url = (picked ? picked.url : shareFeedUrl).trim();
+    const label = (picked ? picked.label : shareFeedLabel).trim();
+    if (!url) return;
+    setShareFeedBusy(true);
+    try {
+      await onShareFeed(url, label, source);
+      showNotice("shared.feedShared");
+      setPickedFeedId("");
+      setShareFeedUrl("");
+      setShareFeedLabel("");
+    } catch (err) {
+      console.error("failed to share feed", err);
+      showNotice("shared.feedShareFailed");
+    } finally {
+      setShareFeedBusy(false);
+    }
+  }
+
   async function handleTranslate(article: NewsArticle) {
     if (translatingId) return; // single-flight guard
     setTranslatingId(article.id);
@@ -273,6 +341,7 @@ export function SharedView(props: {
   const sourceArticles = source === "room" ? roomArticles : globalArticles;
   const sourceConnected = source === "room" ? roomConnected : globalConnected;
   const sourcePeers = source === "room" ? roomPeers : globalPeers;
+  const sourceSharedFeeds = source === "room" ? roomSharedFeeds : globalSharedFeeds;
   const active = sourceArticles.find((a) => a.id === activeId) ?? null;
   // Not stateful — re-read on every render, same idiom as ArticlesView's latestEval.
   const cachedTranslation = active ? getTranslation(active.id, locale) : null;
@@ -517,6 +586,133 @@ export function SharedView(props: {
       ) : (
         <>
         <div class="shared-list-pane">
+          <div class="feed-share-section">
+            <div class="feed-share-header">
+              <h3 class="feed-share-title">
+                <Rss size={14} /> {t("shared.feedShareTitle")}
+              </h3>
+              <button
+                type="button"
+                class="link-btn"
+                onClick={() => setShowShareFeedForm((v) => !v)}
+              >
+                <Share2 size={13} />{" "}
+                {showShareFeedForm ? t("common.close") : t("shared.feedShareOpenForm")}
+              </button>
+            </div>
+
+            {/* Reuses the same `notice` state as save/forward — those render
+               their toast in the reader pane, which is hidden while nothing
+               is selected, so feed import/share actions (which happen from
+               the list pane, often with no article selected) get their own
+               visible copy here. */}
+            {notice ? <p class="feed-share-notice">{notice}</p> : null}
+
+            {showShareFeedForm ? (
+              <div class="feed-share-form">
+                <div class="category-filter-row" role="tablist">
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={shareFeedMode === "pick"}
+                    class={`category-filter-chip${shareFeedMode === "pick" ? " category-filter-chip--active" : ""}`}
+                    onClick={() => setShareFeedMode("pick")}
+                  >
+                    {t("shared.feedShareModePick")}
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={shareFeedMode === "url"}
+                    class={`category-filter-chip${shareFeedMode === "url" ? " category-filter-chip--active" : ""}`}
+                    onClick={() => setShareFeedMode("url")}
+                  >
+                    {t("shared.feedShareModeUrl")}
+                  </button>
+                </div>
+
+                {shareFeedMode === "pick" ? (
+                  myFeeds.length === 0 ? (
+                    <p class="feed-share-empty">{t("shared.feedShareNoOwnFeeds")}</p>
+                  ) : (
+                    <select
+                      value={pickedFeedId}
+                      onChange={(e) => setPickedFeedId((e.target as HTMLSelectElement).value)}
+                    >
+                      <option value="">{t("shared.feedSharePickPlaceholder")}</option>
+                      {myFeeds.map((f) => (
+                        <option key={f.id} value={f.id}>
+                          {f.label || f.url}
+                        </option>
+                      ))}
+                    </select>
+                  )
+                ) : (
+                  <div class="feed-share-url-inputs">
+                    <input
+                      type="text"
+                      placeholder={t("shared.feedShareUrlPlaceholder")}
+                      value={shareFeedUrl}
+                      onInput={(e) => setShareFeedUrl((e.target as HTMLInputElement).value)}
+                    />
+                    <input
+                      type="text"
+                      placeholder={t("shared.feedShareLabelPlaceholder")}
+                      value={shareFeedLabel}
+                      onInput={(e) => setShareFeedLabel((e.target as HTMLInputElement).value)}
+                    />
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  class="btn btn-primary btn-small"
+                  disabled={
+                    shareFeedBusy ||
+                    (shareFeedMode === "pick" ? !pickedFeedId : !shareFeedUrl.trim())
+                  }
+                  onClick={() => void handleShareFeed()}
+                >
+                  <Send size={13} /> {t("shared.feedShareSubmit")}
+                </button>
+              </div>
+            ) : null}
+
+            {sourceSharedFeeds.length === 0 ? (
+              <p class="feed-share-empty">{t("shared.feedShareEmpty")}</p>
+            ) : (
+              <ul class="feed-share-list">
+                {sourceSharedFeeds.map((wire) => {
+                  const alreadyImported = isFeedAlreadyImported(wire.url);
+                  return (
+                    <li key={wire.id} class="feed-share-item">
+                      <div class="feed-share-item-main">
+                        <span class="feed-share-item-label">{wire.label || wire.url}</span>
+                        <span class="feed-share-item-url">{wire.url}</span>
+                        <span class="feed-share-item-from">
+                          {t("shared.feedShareFrom", { name: wire.fromName || t("common.anonymous") })}
+                        </span>
+                      </div>
+                      {alreadyImported ? (
+                        <span class="badge badge--shared">{t("shared.feedAlreadyImported")}</span>
+                      ) : (
+                        <button
+                          type="button"
+                          class="icon-btn"
+                          title={t("shared.feedShareImportAction")}
+                          aria-label={t("shared.feedShareImportAction")}
+                          onClick={() => handleImportFeed(wire)}
+                        >
+                          <Download size={15} />
+                        </button>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+
           {availableCategories.length > 0 ? (
             <div class="category-filter-row" role="tablist">
               <button

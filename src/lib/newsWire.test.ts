@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  appendFeedShareLog,
   appendProgramLog,
   cleanupOrphanedRoomKeys,
+  isFeedShareWire,
+  loadFeedShareLog,
   loadProgramLog,
   loadSharedArticles,
   loadSharedPrograms,
@@ -9,7 +12,7 @@ import {
   saveSharedArticles,
   saveSharedPrograms,
 } from "./newsWire";
-import type { ProgramWire } from "./newsWire";
+import type { FeedShareWire, ProgramWire } from "./newsWire";
 import type { NewsArticle, RadioProgram } from "../types";
 import { resetKvStoreForTests } from "./kvStore";
 
@@ -329,5 +332,128 @@ describe("loadProgramLog / appendProgramLog", () => {
     appendProgramLog("room-b", makeProgramWire({ id: "b-1" }));
     expect(loadProgramLog("room-a").map((w) => w.id)).toEqual(["a-1"]);
     expect(loadProgramLog("room-b").map((w) => w.id)).toEqual(["b-1"]);
+  });
+});
+
+function makeFeedShareWire(overrides: Partial<FeedShareWire> = {}): FeedShareWire {
+  return {
+    type: "tc-news:feed-share",
+    id: "feed-share-1",
+    url: "https://example.com/feed.xml",
+    label: "Example Feed",
+    fromId: "did:key:alice",
+    fromName: "Alice",
+    timestamp: Date.now(),
+    signature: "sig-1",
+    ...overrides,
+  };
+}
+
+describe("isFeedShareWire", () => {
+  it("accepts a well-formed wire", () => {
+    expect(isFeedShareWire(makeFeedShareWire())).toBe(true);
+  });
+
+  it("accepts a wire without fromApp (optional field)", () => {
+    const wire = makeFeedShareWire();
+    delete (wire as Record<string, unknown>).fromApp;
+    expect(isFeedShareWire(wire)).toBe(true);
+  });
+
+  it("accepts a wire with a string fromApp", () => {
+    expect(isFeedShareWire(makeFeedShareWire({ fromApp: "tc-news" }))).toBe(true);
+  });
+
+  it("rejects a wire with the wrong type discriminant", () => {
+    expect(isFeedShareWire({ ...makeFeedShareWire(), type: "tc-news:program" })).toBe(false);
+  });
+
+  it("rejects a wire missing url", () => {
+    const wire = makeFeedShareWire() as Record<string, unknown>;
+    delete wire.url;
+    expect(isFeedShareWire(wire)).toBe(false);
+  });
+
+  it("rejects a wire missing label", () => {
+    const wire = makeFeedShareWire() as Record<string, unknown>;
+    delete wire.label;
+    expect(isFeedShareWire(wire)).toBe(false);
+  });
+
+  it("rejects a wire with a non-string fromApp", () => {
+    expect(isFeedShareWire({ ...makeFeedShareWire(), fromApp: 42 })).toBe(false);
+  });
+
+  it("rejects non-object values", () => {
+    expect(isFeedShareWire(null)).toBe(false);
+    expect(isFeedShareWire("not-an-object")).toBe(false);
+  });
+});
+
+describe("loadFeedShareLog / appendFeedShareLog", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it("returns an empty array when the key is unset", () => {
+    expect(loadFeedShareLog("room-1")).toEqual([]);
+  });
+
+  it("round-trips a wire through append then load, preserving all fields", () => {
+    const wire = makeFeedShareWire({ fromApp: "tc-news" });
+    appendFeedShareLog("room-1", wire);
+    expect(loadFeedShareLog("room-1")).toEqual([wire]);
+  });
+
+  it("dedupes by wire.id: a later append with the same id is dropped, first wins", () => {
+    const first = makeFeedShareWire({ id: "dup-1", label: "First label" });
+    const second = makeFeedShareWire({ id: "dup-1", label: "Second label" });
+    appendFeedShareLog("room-1", first);
+    appendFeedShareLog("room-1", second);
+    const loaded = loadFeedShareLog("room-1");
+    expect(loaded).toHaveLength(1);
+    expect(loaded[0].label).toBe("First label");
+  });
+
+  it("keeps at most 200 entries, dropping the oldest when a 201st is appended", () => {
+    for (let i = 0; i < 201; i++) {
+      appendFeedShareLog("room-1", makeFeedShareWire({ id: `feed-share-${i}` }));
+    }
+    const loaded = loadFeedShareLog("room-1");
+    expect(loaded).toHaveLength(200);
+    expect(loaded.some((w) => w.id === "feed-share-0")).toBe(false);
+    expect(loaded.some((w) => w.id === "feed-share-1")).toBe(true);
+    expect(loaded.some((w) => w.id === "feed-share-200")).toBe(true);
+  });
+
+  it("returns an empty array when localStorage holds malformed JSON", () => {
+    localStorage.setItem("tc-news:feedlog:room-1", "{not valid json");
+    expect(loadFeedShareLog("room-1")).toEqual([]);
+  });
+
+  it("returns an empty array when the stored JSON is not an array", () => {
+    localStorage.setItem("tc-news:feedlog:room-1", JSON.stringify({ not: "an array" }));
+    expect(loadFeedShareLog("room-1")).toEqual([]);
+  });
+
+  it("filters out non-wire garbage elements while keeping valid wires", () => {
+    const valid = makeFeedShareWire({ id: "valid-1" });
+    const garbage: unknown[] = [
+      null,
+      { type: "tc-news:program", id: "wrong-type" }, // wrong type
+      { type: "tc-news:feed-share", id: "missing-fields" }, // missing required fields
+      valid,
+    ];
+    localStorage.setItem("tc-news:feedlog:room-1", JSON.stringify(garbage));
+    const loaded = loadFeedShareLog("room-1");
+    expect(loaded).toHaveLength(1);
+    expect(loaded[0]).toEqual(valid);
+  });
+
+  it("keeps logs independent across different roomIds", () => {
+    appendFeedShareLog("room-a", makeFeedShareWire({ id: "a-1" }));
+    appendFeedShareLog("room-b", makeFeedShareWire({ id: "b-1" }));
+    expect(loadFeedShareLog("room-a").map((w) => w.id)).toEqual(["a-1"]);
+    expect(loadFeedShareLog("room-b").map((w) => w.id)).toEqual(["b-1"]);
   });
 });

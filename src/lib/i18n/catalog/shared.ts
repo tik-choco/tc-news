@@ -42,6 +42,23 @@ const ja = {
   rankingYouReceived: "獲得リアクション: {count}",
   rankingYouBestRank: "最高順位: {rank}位",
   rankingYouNoEntry: "あなたの記事・番組へのリアクションはまだありません。共有して反応をもらいましょう!",
+  // Feed sharing (mistlibルーム経由でフィードURLを共有・取り込み)
+  feedShareTitle: "共有フィード",
+  feedShareOpenForm: "フィードを共有",
+  feedShareModePick: "自分のフィードから選ぶ",
+  feedShareModeUrl: "URLを直接入力",
+  feedShareNoOwnFeeds: "登録済みのフィードがありません。先にホームでフィードを追加してください。",
+  feedSharePickPlaceholder: "フィードを選択...",
+  feedShareUrlPlaceholder: "フィードURL(https://...)",
+  feedShareLabelPlaceholder: "表示名(任意)",
+  feedShareSubmit: "共有する",
+  feedShareEmpty: "共有されたフィードはまだありません。",
+  feedShareFrom: "{name} さんが共有",
+  feedShareImportAction: "自分のフィードに取り込む",
+  feedShared: "フィードを共有しました",
+  feedShareFailed: "フィードを共有できませんでした",
+  feedImported: "フィードを取り込みました",
+  feedAlreadyImported: "取り込み済み",
 };
 
 const en: typeof ja = {
@@ -82,6 +99,22 @@ const en: typeof ja = {
   rankingYouReceived: "Reactions received: {count}",
   rankingYouBestRank: "Best rank: #{rank}",
   rankingYouNoEntry: "No reactions on your articles or programs yet — share something and see how it lands!",
+  feedShareTitle: "Shared feeds",
+  feedShareOpenForm: "Share a feed",
+  feedShareModePick: "Pick from my feeds",
+  feedShareModeUrl: "Enter a URL",
+  feedShareNoOwnFeeds: "You have no feeds registered yet. Add one on the Home tab first.",
+  feedSharePickPlaceholder: "Select a feed...",
+  feedShareUrlPlaceholder: "Feed URL (https://...)",
+  feedShareLabelPlaceholder: "Display name (optional)",
+  feedShareSubmit: "Share",
+  feedShareEmpty: "No shared feeds yet.",
+  feedShareFrom: "Shared by {name}",
+  feedShareImportAction: "Add to my feeds",
+  feedShared: "Feed shared",
+  feedShareFailed: "Could not share the feed",
+  feedImported: "Feed added",
+  feedAlreadyImported: "Already added",
 };
 
 export const shared = { ja, en };
