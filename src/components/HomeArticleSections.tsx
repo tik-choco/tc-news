@@ -2,12 +2,12 @@
 // (縦グリッド、先頭6件+「すべて見る」でみんなタブへ)の2セクション。
 // 元はFeedViewの中の横スクロールレール(.feed-home-rail)だったが、home tab
 // article-first化に伴い、記事本体をメインコンテンツにする縦グリッドへ変更。
-import { useState } from "preact/hooks";
+import { useMemo, useState } from "preact/hooks";
 import type { JSX } from "preact";
 import { Globe, Network } from "lucide-preact";
 import type { NewsArticle } from "../types";
 import { ArticleCard } from "./ArticleCard";
-import { getLatestArticleEvaluation } from "../lib/articleEvaluation";
+import { getLatestArticleEvaluations } from "../lib/articleEvaluation";
 import { useT } from "../lib/i18n";
 import "../styles/homeSections.css";
 
@@ -37,6 +37,14 @@ export function HomeArticleSections(props: {
   const visibleArticles = showAll ? articles : articles.slice(0, DEFAULT_VISIBLE_COUNT);
   const visibleGlobalArticles = globalArticles.slice(0, GLOBAL_VISIBLE_COUNT);
 
+  // Batch-load evaluation scores for all visible cards in one pass instead
+  // of re-parsing the whole evaluations blob per card on every render (see
+  // articleEvaluation.ts's getLatestArticleEvaluations).
+  const evaluationsById = useMemo(
+    () => getLatestArticleEvaluations(visibleArticles.map((a) => a.id)),
+    [visibleArticles],
+  );
+
   return (
     <>
       <div class="feed-home-section">
@@ -62,8 +70,8 @@ export function HomeArticleSections(props: {
                 <ArticleCard
                   key={article.id}
                   article={article}
-                  onClick={() => onOpenArticle(article.id)}
-                  evaluationScore={getLatestArticleEvaluation(article.id)?.overallScore ?? null}
+                  onClick={onOpenArticle}
+                  evaluationScore={evaluationsById.get(article.id)?.overallScore ?? null}
                 />
               ))}
             </div>
@@ -96,7 +104,7 @@ export function HomeArticleSections(props: {
         ) : (
           <div class="home-articles-grid">
             {visibleGlobalArticles.map((article) => (
-              <ArticleCard key={article.id} article={article} onClick={() => onOpenGlobal(article.id)} />
+              <ArticleCard key={article.id} article={article} onClick={onOpenGlobal} />
             ))}
           </div>
         )}

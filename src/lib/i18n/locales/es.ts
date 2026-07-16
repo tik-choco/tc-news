@@ -90,11 +90,14 @@ export const es: Messages = {
     inboxSelectModeExit: "Listo",
     // Insignia "+N" en una tarjeta cuando se agrupan noticias casi idénticas de otras fuentes
     inboxDupAria: "{count} elementos similares más de otras fuentes",
+    inboxLoadMore: "Mostrar {count} más",
     filterAll: "Todo",
     filterArticles: "Artículos",
     filterAudio: "Audio",
     programsHeading: "Programas",
     ownAuthorLabel: "Tú",
+    programsShowAll: "Mostrar todos ({count})",
+    programsShowLess: "Mostrar menos",
   },
 
   articles: {
@@ -151,6 +154,8 @@ export const es: Messages = {
     unmuteAuthor: "Dejar de silenciar",
     mutedCollapsed: "{count} artículos de autores silenciados ocultos",
     showMuted: "Mostrar",
+    listShowAll: "Mostrar todo ({count})",
+    listShowLess: "Mostrar menos",
     globalEmptyTitle: "Aún no hay artículos globales",
     globalEmptyDesc: "Los artículos que alguien publique globalmente aparecerán aquí.",
     unreadBadge: "{count} sin leer",

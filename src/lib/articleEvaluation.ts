@@ -76,6 +76,12 @@ export interface ArticleEvaluationRecord {
 
 const EVALUATIONS_KEY = "tc-news:evaluations";
 const MAX_HISTORY_PER_ARTICLE = 10;
+/** Defense-in-depth cap on distinct articleId keys in the evaluations blob.
+ * articleStore.ts's persist() already calls deleteArticleEvaluations() for
+ * ids it trims out (MAX_ARTICLES=200), so this should rarely bind — it only
+ * guards against evaluations leaking in for ids dropped through some path
+ * that doesn't go through persist() (e.g. shared/global articles). */
+const MAX_EVALUATED_ARTICLES = 250;
 
 function newEvalId(): string {
   try {
@@ -151,6 +157,25 @@ function saveEvaluation(record: ArticleEvaluationRecord): void {
     .sort((a, b) => b.evaluatedAt - a.evaluatedAt)
     .slice(0, MAX_HISTORY_PER_ARTICLE);
   all[record.articleId] = next;
+
+  // Defense-in-depth: cap distinct articleId keys, evicting whichever
+  // article's most recent record (index 0, already newest-first) is oldest.
+  let articleIds = Object.keys(all);
+  while (articleIds.length > MAX_EVALUATED_ARTICLES) {
+    let oldestId: string | null = null;
+    let oldestAt = Infinity;
+    for (const id of articleIds) {
+      const at = all[id][0]?.evaluatedAt ?? 0;
+      if (at < oldestAt) {
+        oldestAt = at;
+        oldestId = id;
+      }
+    }
+    if (oldestId === null) break;
+    delete all[oldestId];
+    articleIds = Object.keys(all);
+  }
+
   persistAllEvaluations(all);
 }
 
@@ -163,6 +188,28 @@ export function listArticleEvaluations(articleId: string): ArticleEvaluationReco
 /** 最新の評価（なければ null） */
 export function getLatestArticleEvaluation(articleId: string): ArticleEvaluationRecord | null {
   return listArticleEvaluations(articleId)[0] ?? null;
+}
+
+/**
+ * 複数記事の最新評価を一括取得する。評価ブロブ全体のロード/パースは1回だけ
+ * 行う — カード一覧のレンダリングでN件ぶん個別に getLatestArticleEvaluation()
+ * を呼ぶとN回フルパースが走ってしまうためのバッチ版。
+ */
+export function getLatestArticleEvaluations(articleIds: string[]): Map<string, ArticleEvaluationRecord | null> {
+  const all = loadAllEvaluations();
+  const out = new Map<string, ArticleEvaluationRecord | null>();
+  for (const articleId of articleIds) {
+    const records = all[articleId];
+    if (!records || records.length === 0) {
+      out.set(articleId, null);
+      continue;
+    }
+    // loadAllEvaluations()'s per-article lists are already sorted
+    // newest-first at save time (see saveEvaluation), but sort defensively
+    // here too, matching listArticleEvaluations()'s contract.
+    out.set(articleId, [...records].sort((a, b) => b.evaluatedAt - a.evaluatedAt)[0] ?? null);
+  }
+  return out;
 }
 
 export function deleteArticleEvaluations(articleId: string): void {

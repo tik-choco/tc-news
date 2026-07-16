@@ -5,6 +5,7 @@
 
 import type { NewsArticle, SourceLink } from "../types";
 import { kvGetSync, kvSetSync, KV_VALUE_SOFT_LIMIT_BYTES, utf8ByteLength } from "./kvStore";
+import { deleteArticleEvaluations } from "./articleEvaluation";
 
 const ARTICLES_KEY = "tc-news:articles";
 const MAX_ARTICLES = 200;
@@ -59,7 +60,10 @@ function sanitizeArticle(value: unknown): NewsArticle | null {
  * If the serialized blob is still over the mist KV's soft limit
  * (lib/kvStore.ts) after that cap, degrade by halving the count and
  * re-measuring, down to MIN_ARTICLES — since the array is newest-first this
- * drops the oldest articles first. */
+ * drops the oldest articles first. Any article id present in the input but
+ * absent from the final saved set (i.e. trimmed off by either step above)
+ * has its evaluation history (articleEvaluation.ts) cleaned up too, so that
+ * blob doesn't accumulate orphaned entries forever. */
 function persist(articles: NewsArticle[]): void {
   let toSave = articles.slice(0, MAX_ARTICLES);
   let serialized = JSON.stringify(toSave);
@@ -68,6 +72,11 @@ function persist(articles: NewsArticle[]): void {
     serialized = JSON.stringify(toSave);
   }
   kvSetSync(ARTICLES_KEY, serialized);
+
+  const savedIds = new Set(toSave.map((a) => a.id));
+  for (const article of articles) {
+    if (!savedIds.has(article.id)) deleteArticleEvaluations(article.id);
+  }
 }
 
 /** createdAt 降順で自分の生成記事を返す。 */

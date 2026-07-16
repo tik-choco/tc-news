@@ -111,9 +111,32 @@ function textOf(el: Element | null | undefined): string | undefined {
 // Settings
 // ---------------------------------------------------------------------------
 
-/** loadAppSettings().showMediaPreviews !== false */
+// Mirrors appSettings.ts's private SETTINGS_KEY. mediaPreviewsEnabled() is
+// called once per card per render, and loadAppSettings() re-reads and
+// re-JSON-parses localStorage on every call — so cache the derived boolean,
+// keyed by the raw underlying localStorage string (same idiom as
+// reactionStore.ts's readAll() cache and this file's own OGP memoryCache
+// below), invalidating immediately whenever the raw value changes rather
+// than on a time-based TTL. If appSettings.ts ever renames its storage key
+// this cache simply stops matching and falls back to an uncached read every
+// call — never a stale/wrong value.
+const APP_SETTINGS_STORAGE_KEY = "tc-news:app-settings";
+let mediaPreviewsCache: { raw: string | null; value: boolean } | null = null;
+
+/** loadAppSettings().showMediaPreviews !== false, cached until the
+ * underlying app-settings storage value changes. */
 export function mediaPreviewsEnabled(): boolean {
-  return loadAppSettings().showMediaPreviews !== false;
+  let raw: string | null;
+  try {
+    raw = localStorage.getItem(APP_SETTINGS_STORAGE_KEY);
+  } catch {
+    // localStorage inaccessible — fall back to an uncached read.
+    return loadAppSettings().showMediaPreviews !== false;
+  }
+  if (mediaPreviewsCache && mediaPreviewsCache.raw === raw) return mediaPreviewsCache.value;
+  const value = loadAppSettings().showMediaPreviews !== false;
+  mediaPreviewsCache = { raw, value };
+  return value;
 }
 
 // ---------------------------------------------------------------------------

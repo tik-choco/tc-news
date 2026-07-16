@@ -87,11 +87,14 @@ export const ko: Messages = {
     inboxSelectModeExit: "완료",
     // 다른 소스에서 온 거의 동일한 항목들을 하나로 묶었을 때 카드에 표시되는 "+N" 배지
     inboxDupAria: "다른 출처의 비슷한 항목이 {count}건 더 있습니다",
+    inboxLoadMore: "{count}개 더 보기",
     filterAll: "전체",
     filterArticles: "기사",
     filterAudio: "오디오",
     programsHeading: "프로그램",
     ownAuthorLabel: "나",
+    programsShowAll: "전체 보기 ({count})",
+    programsShowLess: "줄여서 보기",
   },
 
   articles: {
@@ -148,6 +151,8 @@ export const ko: Messages = {
     unmuteAuthor: "뮤트 해제",
     mutedCollapsed: "뮤트한 작성자의 기사 {count}건을 숨겼습니다",
     showMuted: "표시",
+    listShowAll: "전체 표시 ({count})",
+    listShowLess: "간략히 표시",
     globalEmptyTitle: "아직 글로벌 기사가 없습니다",
     globalEmptyDesc: "누군가 글로벌에 게시하면 여기에 표시됩니다.",
     unreadBadge: "읽지 않음 {count}건",

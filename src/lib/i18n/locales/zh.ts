@@ -86,11 +86,14 @@ export const zh: Messages = {
     inboxSelectModeExit: "完成",
     // 当来自其他来源的近似重复内容被合并时，卡片上显示的"+N"徽标
     inboxDupAria: "还有{count}条来自其他来源的相似内容",
+    inboxLoadMore: "显示更多 ({count})",
     filterAll: "全部",
     filterArticles: "文章",
     filterAudio: "音频",
     programsHeading: "节目",
     ownAuthorLabel: "我",
+    programsShowAll: "显示全部 ({count})",
+    programsShowLess: "收起",
   },
 
   articles: {
@@ -147,6 +150,8 @@ export const zh: Messages = {
     unmuteAuthor: "取消屏蔽",
     mutedCollapsed: "已隐藏 {count} 篇来自屏蔽发布者的文章",
     showMuted: "显示",
+    listShowAll: "显示全部 ({count})",
+    listShowLess: "收起",
     globalEmptyTitle: "全局中还没有文章",
     globalEmptyDesc: "当有人发布到全局时，会显示在这里。",
     unreadBadge: "{count} 条未读",

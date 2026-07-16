@@ -30,6 +30,8 @@ import {
   loadSharedArticles,
   loadSharedPrograms,
   loadWireLog,
+  MAX_SHARED_ARTICLES,
+  MAX_SHARED_PROGRAMS,
   newFeedShareWireId,
   newReactionWireId,
   newTranslationWireId,
@@ -229,16 +231,27 @@ export function useNewsRoom(roomId: string, userName: string, enabled = true) {
     // EVENT_PEER_CONNECTED (see below).
     const requestedAt = new Map<string, number>();
 
+    // Mirrors saveSharedArticles's own sort/trim (see newsWire.ts) so the
+    // in-memory ref/state driving rendering never grows past the same cap
+    // applied to the persisted copy — otherwise a long-lived tab receiving a
+    // steady stream of P2P articles would grow this array unboundedly even
+    // though the persisted copy stays capped.
     function commitSharedArticles(next: NewsArticle[]) {
-      sharedArticlesRef.current = next;
-      saveSharedArticles(roomId, next);
-      setSharedArticles(next);
+      const sorted = [...next].sort((a, b) => b.createdAt - a.createdAt);
+      const trimmed = sorted.slice(0, MAX_SHARED_ARTICLES);
+      sharedArticlesRef.current = trimmed;
+      saveSharedArticles(roomId, trimmed);
+      setSharedArticles(trimmed);
     }
 
+    // Mirrors saveSharedPrograms's own sort/trim (see newsWire.ts) — same
+    // rationale as commitSharedArticles above.
     function commitSharedPrograms(next: RadioProgram[]) {
-      sharedProgramsRef.current = next;
-      saveSharedPrograms(roomId, next);
-      setSharedPrograms(next);
+      const sorted = [...next].sort((a, b) => b.createdAt - a.createdAt);
+      const trimmed = sorted.slice(0, MAX_SHARED_PROGRAMS);
+      sharedProgramsRef.current = trimmed;
+      saveSharedPrograms(roomId, trimmed);
+      setSharedPrograms(trimmed);
     }
 
     // No saveSharedFeeds counterpart: appendFeedShareLog (called by both
@@ -565,9 +578,13 @@ export function useNewsRoom(roomId: string, userName: string, enabled = true) {
     appendWireLog(roomIdRef.current, wire);
     const shared: NewsArticle = { ...article, cid, shared: true };
     const next = [shared, ...sharedArticlesRef.current.filter((a) => a.id !== article.id)];
-    sharedArticlesRef.current = next;
-    saveSharedArticles(roomIdRef.current, next);
-    setSharedArticles(next);
+    // Same cap as commitSharedArticles (see the P2P-hydrate effect above) —
+    // sharing keeps this array capped at MAX_SHARED_ARTICLES too, not just
+    // received articles.
+    const trimmed = [...next].sort((a, b) => b.createdAt - a.createdAt).slice(0, MAX_SHARED_ARTICLES);
+    sharedArticlesRef.current = trimmed;
+    saveSharedArticles(roomIdRef.current, trimmed);
+    setSharedArticles(trimmed);
   }
 
   async function shareTranslation(
@@ -639,9 +656,11 @@ export function useNewsRoom(roomId: string, userName: string, enabled = true) {
     node.sendMessage(null, wire, DELIVERY_RELIABLE, roomIdRef.current);
     appendProgramLog(roomIdRef.current, wire);
     const next = [stamped, ...sharedProgramsRef.current.filter((p) => p.id !== program.id)];
-    sharedProgramsRef.current = next;
-    saveSharedPrograms(roomIdRef.current, next);
-    setSharedPrograms(next);
+    // Same cap as commitSharedPrograms (see the P2P-hydrate effect above).
+    const trimmed = [...next].sort((a, b) => b.createdAt - a.createdAt).slice(0, MAX_SHARED_PROGRAMS);
+    sharedProgramsRef.current = trimmed;
+    saveSharedPrograms(roomIdRef.current, trimmed);
+    setSharedPrograms(trimmed);
     return stamped;
   }
 

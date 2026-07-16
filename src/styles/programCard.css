@@ -34,6 +34,15 @@
   gap: var(--space-4);
 }
 
+/* "もっと見る"/"表示を減らす" トグル (HomeArticleSections の
+   .home-show-toggle と同じ見た目)。番組セクションは自分のCSSに
+   まとめる方針なので、他モジュールのクラスには依存させない。 */
+.program-cards-toggle {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--space-3);
+}
+
 .program-card {
   display: flex;
   align-items: stretch;

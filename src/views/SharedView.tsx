@@ -46,6 +46,11 @@ import "../styles/reactions.css";
 
 type Source = "room" | "global";
 
+/** デフォルトで表示する共有記事一覧の件数。超えたらトグルで全件表示。
+ * HomeArticleSections.tsxのDEFAULT_VISIBLE_COUNT(カードグリッド用)と同じ
+ * 考え方だが、こちらはReactionBar付きのフル行なので値は大きめにしている。 */
+const DEFAULT_VISIBLE_COUNT = 20;
+
 export function SharedView(props: {
   roomId: string;
   roomArticles: NewsArticle[];
@@ -114,6 +119,7 @@ export function SharedView(props: {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [mutedDids, setMutedDids] = useState<string[]>(() => loadMutedDids());
   const [showMuted, setShowMuted] = useState(false);
+  const [showAllArticles, setShowAllArticles] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<ArticleCategory | null>(null);
   const [forwardBusyId, setForwardBusyId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -220,6 +226,7 @@ export function SharedView(props: {
     setSource(sourceHint.source);
     setShowMuted(false);
     setCategoryFilter(null);
+    setShowAllArticles(false);
   }, [sourceHint]);
 
   function selectArticle(id: string | null) {
@@ -239,6 +246,7 @@ export function SharedView(props: {
     // side may not exist (or mean the same thing) on the other — reset it
     // rather than silently carrying a stale filter across.
     setCategoryFilter(null);
+    setShowAllArticles(false);
   }
 
   function activateRanking() {
@@ -378,6 +386,13 @@ export function SharedView(props: {
     ? categoryFilteredArticles
     : categoryFilteredArticles.filter((a) => !isMuted(a.authorDid, mutedDids));
   const mutedHiddenCount = showMuted ? 0 : categoryFilteredArticles.length - visibleArticles.length;
+  // Rendering cap on top of the category/mute filtering above: a room's
+  // shared-article list can hold up to MAX_SHARED_ARTICLES entries (see
+  // lib/newsWire.ts), and rendering an ArticleCard + ReactionBar per row for
+  // all of them at once is wasteful for a list that's rarely scrolled past
+  // the first screenful. Same "show more" convention as
+  // HomeArticleSections.tsx's DEFAULT_VISIBLE_COUNT toggle.
+  const renderedArticles = showAllArticles ? visibleArticles : visibleArticles.slice(0, DEFAULT_VISIBLE_COUNT);
 
   const emptyTitle = source === "global" ? t("shared.globalEmptyTitle") : t("shared.emptyTitle");
   const emptyDesc =
@@ -742,12 +757,12 @@ export function SharedView(props: {
             <EmptyState icon={Globe} title={emptyTitle} description={emptyDesc} />
           ) : (
             <ul class="shared-list">
-              {visibleArticles.map((article) => (
+              {renderedArticles.map((article) => (
                 <li key={article.id}>
                   <ArticleCard
                     article={article}
                     active={article.id === activeId}
-                    onClick={() => selectArticle(article.id)}
+                    onClick={selectArticle}
                     actions={<ReactionBar targetId={article.id} compact />}
                   />
                 </li>
@@ -762,6 +777,17 @@ export function SharedView(props: {
               ) : null}
             </ul>
           )}
+          {visibleArticles.length > DEFAULT_VISIBLE_COUNT ? (
+            <div class="shared-show-toggle">
+              <button
+                type="button"
+                class="btn btn-ghost btn-small"
+                onClick={() => setShowAllArticles((prev) => !prev)}
+              >
+                {showAllArticles ? t("shared.listShowLess") : t("shared.listShowAll", { count: visibleArticles.length })}
+              </button>
+            </div>
+          ) : null}
         </div>
 
         <div class="shared-reader-pane">
