@@ -116,6 +116,14 @@
   gap: var(--space-4);
 }
 
+/* 「さらに表示」ボタン(最大500件を一度に描画しないための段階的展開)。
+   home-show-toggle(homeSections.css)と同じ、中央寄せの単独ボタン行。 */
+.feed-inbox-load-more {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--space-4);
+}
+
 .feed-item-card {
   display: flex;
   flex-direction: column;

@@ -2,7 +2,8 @@
 // メインコンテンツとして表示していたRSS新着グリッド(カテゴリフィルタ込み)
 // を、記事優先レイアウトへの移行に伴いここへ独立させた。開閉状態は
 // localStorageに永続化し、次回訪問時も同じ表示状態を保つ。
-import { useMemo, useRef, useState } from "preact/hooks";
+import { useCallback, useMemo, useRef, useState } from "preact/hooks";
+import { memo } from "preact/compat";
 import type { JSX } from "preact";
 import { ChevronDown, ChevronUp, Inbox, Rss } from "lucide-preact";
 import type { FeedItem } from "../types";
@@ -22,6 +23,13 @@ const COLLAPSE_STORAGE_KEY = "tc-news:feed-inbox-collapsed";
 const LONG_PRESS_MS = 500;
 const LONG_PRESS_MOVE_PX = 10;
 
+// 新着アイテムグリッドは最大MAX_FEED_ITEMS(feedStore.ts)件まで溜まりうる
+// ため、一度に全件は描画しない。カードが記事グリッドより小ぶりなぶん初期
+// 件数は多めにしつつ、「さらに表示」で段階的に伸ばす(500件一括の
+// 「すべて表示」だと逆にUXが悪い)。
+const DEFAULT_VISIBLE_COUNT = 30;
+const LOAD_MORE_STEP = 30;
+
 function readCollapsedInitial(): boolean {
   try {
     return localStorage.getItem(COLLAPSE_STORAGE_KEY) === "1";
@@ -37,18 +45,25 @@ function writeCollapsed(collapsed: boolean) {
 
 /** 新着カード1件分。プレビュー取得はカード単位のフックが必要なため、
  * ここを独立コンポーネントに切り出している(元は items.map 内のインライン
- * JSXだった)。 */
-function FeedItemCard(props: {
+ * JSXだった)。
+ *
+ * memo()でラップ: 新着グリッドは選択モードのトグルや無関係なホーム状態の
+ * 変化でも親(FeedInbox)ごと再レンダリングされうるため、item/checked等が
+ * 変わらないカードの再描画(プレビュー再取得やタイマー再生成)を防ぐ。
+ * 呼び出し側(FeedInbox)はコールバックpropsをitem単位のインライン関数で
+ * ラップせず、id/itemを引数に取る安定した関数をそのまま渡しているので、
+ * デフォルトの浅い比較で十分効く。 */
+const FeedItemCard = memo(function FeedItemCard(props: {
   item: FeedItem;
   duplicates?: FeedItem[];
   index: number;
   checked: boolean;
   selectionActive: boolean;
-  onToggle: () => void;
-  onCheckboxInteract: (shiftKey: boolean) => void;
+  onToggleSelect: (id: string) => void;
+  onCheckboxInteract: (id: string, shiftKey: boolean) => void;
   /** 長押し(モバイル)で選択モードに入りつつ、このアイテムをトグルする。 */
-  onLongPress: () => void;
-  onOpen: () => void;
+  onLongPress: (id: string) => void;
+  onOpen: (item: FeedItem) => void;
   locale: Locale;
   untitledLabel: string;
   selectAriaLabel: string;
@@ -59,7 +74,7 @@ function FeedItemCard(props: {
     index,
     checked,
     selectionActive,
-    onToggle,
+    onToggleSelect,
     onCheckboxInteract,
     onLongPress,
     onOpen,
@@ -106,7 +121,7 @@ function FeedItemCard(props: {
         // Vibration API未対応/権限拒否は無視して選択だけ続行。
       }
       suppressClickRef.current = true;
-      onLongPress();
+      onLongPress(item.id);
     }, LONG_PRESS_MS);
   }
 
@@ -133,9 +148,9 @@ function FeedItemCard(props: {
     }
     if (selectionActive) {
       // shift+クリックでチェックボックスと同じ範囲選択ロジックに乗せる。
-      onCheckboxInteract(e.shiftKey);
+      onCheckboxInteract(item.id, e.shiftKey);
     } else {
-      onOpen();
+      onOpen(item);
     }
   }
 
@@ -143,9 +158,9 @@ function FeedItemCard(props: {
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
       if (selectionActive) {
-        onToggle();
+        onToggleSelect(item.id);
       } else {
-        onOpen();
+        onOpen(item);
       }
     }
   }
@@ -201,7 +216,7 @@ function FeedItemCard(props: {
               // 書き込んだchecked=trueが巻き戻しに潰されて「選択されたのに
               // チェックが出ない」状態になる。ネイティブのトグル結果と
               // ここでの状態更新は常に同じ値なので、素通しで整合する。
-              onCheckboxInteract(e.shiftKey);
+              onCheckboxInteract(item.id, e.shiftKey);
             }}
             aria-label={selectAriaLabel}
           />
@@ -230,7 +245,7 @@ function FeedItemCard(props: {
       </div>
     </div>
   );
-}
+});
 
 export function FeedInbox(props: {
   items: FeedItem[];
@@ -249,6 +264,13 @@ export function FeedInbox(props: {
   // 明示的な選択モード。トグルボタン(または長押し)で入り、「完了」で
   // 抜ける。selectedIds.sizeが0になっても勝手には終了しない。
   const [selectionMode, setSelectionMode] = useState(false);
+
+  // 新着グリッドの初期描画件数。最大MAX_FEED_ITEMS(500)件を一度に描画
+  // しないためのキャップで、「さらに表示」で段階的に伸びる。カテゴリ
+  // フィルタ切り替えなど、表示対象の集合が丸ごと変わる操作では
+  // resetVisibleCount()で初期値に戻す。
+  const [visibleCount, setVisibleCount] = useState(DEFAULT_VISIBLE_COUNT);
+  const resetVisibleCount = useCallback(() => setVisibleCount(DEFAULT_VISIBLE_COUNT), []);
 
   // シフトクリックによる範囲選択の起点。直近でチェックボックスを操作した
   // 代表アイテムのidを覚えておく(選択トグルの再レンダーは挟まない)。
@@ -275,6 +297,13 @@ export function FeedInbox(props: {
     : groups;
   const visibleIds = useMemo(() => visibleGroups.map((group) => group.item.id), [visibleGroups]);
 
+  // 実際にDOMへ描画するのは先頭visibleCount件のみ。「選択」「シフト範囲
+  // 選択」「すべて選択」等の操作対象は引き続きvisibleGroups/visibleIds
+  // (フィルタ後の全件)を使う — ユーザーが「すべて選択」した際に未描画分
+  // が選ばれないと直感に反するため。
+  const shownGroups = visibleGroups.slice(0, visibleCount);
+  const remainingCount = visibleGroups.length - shownGroups.length;
+
   // 選択UI(チェックボックス等)の表示条件: 選択モード中、またはモーダル
   // 側の「選択に追加」等で既に何か選ばれている場合。
   const selectionActive = selectionMode || selectedIds.size > 0;
@@ -290,24 +319,40 @@ export function FeedInbox(props: {
 
   // チェックボックス操作の一本化: 通常クリックはトグル、shift+クリックは
   // 直前の操作対象(アンカー)から今回クリックした代表までの範囲を、
-  // クリックした項目の「次の状態」で一括反映する。
-  function handleCheckboxInteract(id: string, shiftKey: boolean) {
-    const anchor = selectionAnchorRef.current;
-    if (shiftKey && anchor && anchor !== id) {
-      const anchorIdx = visibleIds.indexOf(anchor);
-      const targetIdx = visibleIds.indexOf(id);
-      if (anchorIdx !== -1 && targetIdx !== -1) {
-        const start = Math.min(anchorIdx, targetIdx);
-        const end = Math.max(anchorIdx, targetIdx);
-        const rangeIds = visibleIds.slice(start, end + 1);
-        onSelectMany(rangeIds, !selectedIds.has(id));
-        selectionAnchorRef.current = id;
-        return;
+  // クリックした項目の「次の状態」で一括反映する。useCallbackでラップし、
+  // FeedItemCard(memo化済み)へ安定した参照として渡す — 無関係な親の
+  // 再レンダーでカードごと再生成されるインライン関数を避けるため。
+  const handleCheckboxInteract = useCallback(
+    (id: string, shiftKey: boolean) => {
+      const anchor = selectionAnchorRef.current;
+      if (shiftKey && anchor && anchor !== id) {
+        const anchorIdx = visibleIds.indexOf(anchor);
+        const targetIdx = visibleIds.indexOf(id);
+        if (anchorIdx !== -1 && targetIdx !== -1) {
+          const start = Math.min(anchorIdx, targetIdx);
+          const end = Math.max(anchorIdx, targetIdx);
+          const rangeIds = visibleIds.slice(start, end + 1);
+          onSelectMany(rangeIds, !selectedIds.has(id));
+          selectionAnchorRef.current = id;
+          return;
+        }
       }
-    }
-    onToggleSelect(id);
-    selectionAnchorRef.current = id;
-  }
+      onToggleSelect(id);
+      selectionAnchorRef.current = id;
+    },
+    [visibleIds, selectedIds, onSelectMany, onToggleSelect],
+  );
+
+  // 長押しで選択モードに入りつつ、そのアイテムをトグルする。同じ理由で
+  // useCallback化(idを引数に取るので、FeedItemCard側のインラインラップが
+  // 不要になる)。
+  const handleLongPress = useCallback(
+    (id: string) => {
+      setSelectionMode(true);
+      onToggleSelect(id);
+    },
+    [onToggleSelect],
+  );
 
   function handleSelectAllToggle() {
     onSelectMany(visibleIds, !allVisibleSelected);
@@ -366,7 +411,10 @@ export function FeedInbox(props: {
                 type="button"
                 class={`feed-filter-chip${filterCat === null ? " feed-filter-chip--active" : ""}`}
                 aria-pressed={filterCat === null}
-                onClick={() => setFilterCat(null)}
+                onClick={() => {
+                  setFilterCat(null);
+                  resetVisibleCount();
+                }}
               >
                 {t("common.categoryAll")}
               </button>
@@ -376,7 +424,10 @@ export function FeedInbox(props: {
                   key={cat}
                   class={`feed-filter-chip${filterCat === cat ? " feed-filter-chip--active" : ""}`}
                   aria-pressed={filterCat === cat}
-                  onClick={() => setFilterCat(cat)}
+                  onClick={() => {
+                    setFilterCat(cat);
+                    resetVisibleCount();
+                  }}
                 >
                   {t(categoryLabelKey(cat))}
                 </button>
@@ -384,7 +435,7 @@ export function FeedInbox(props: {
             </div>
           ) : null}
           <div class={`feed-items-grid${selectionActive ? " feed-items-grid--selecting" : ""}`}>
-            {visibleGroups.map((group, index) => (
+            {shownGroups.map((group, index) => (
               <FeedItemCard
                 key={group.item.id}
                 item={group.item}
@@ -392,19 +443,27 @@ export function FeedInbox(props: {
                 index={index}
                 checked={selectedIds.has(group.item.id)}
                 selectionActive={selectionActive}
-                onToggle={() => onToggleSelect(group.item.id)}
-                onCheckboxInteract={(shiftKey) => handleCheckboxInteract(group.item.id, shiftKey)}
-                onLongPress={() => {
-                  setSelectionMode(true);
-                  onToggleSelect(group.item.id);
-                }}
-                onOpen={() => onOpenItem(group.item)}
+                onToggleSelect={onToggleSelect}
+                onCheckboxInteract={handleCheckboxInteract}
+                onLongPress={handleLongPress}
+                onOpen={onOpenItem}
                 locale={locale}
                 untitledLabel={t("feed.untitledItem")}
                 selectAriaLabel={t("feed.addToSelection")}
               />
             ))}
           </div>
+          {remainingCount > 0 ? (
+            <div class="feed-inbox-load-more">
+              <button
+                type="button"
+                class="btn btn-ghost btn-small"
+                onClick={() => setVisibleCount((prev) => prev + LOAD_MORE_STEP)}
+              >
+                {t("feed.inboxLoadMore", { count: Math.min(LOAD_MORE_STEP, remainingCount) })}
+              </button>
+            </div>
+          ) : null}
         </div>
       )}
     </section>

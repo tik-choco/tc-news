@@ -89,11 +89,14 @@ export const fr: Messages = {
     inboxSelectModeExit: "Terminé",
     // Badge « +N » sur une carte quand des actualités quasi identiques d'autres sources y sont regroupées
     inboxDupAria: "{count} éléments similaires supplémentaires d'autres sources",
+    inboxLoadMore: "Afficher {count} de plus",
     filterAll: "Tout",
     filterArticles: "Articles",
     filterAudio: "Audio",
     programsHeading: "Programmes",
     ownAuthorLabel: "Vous",
+    programsShowAll: "Tout afficher ({count})",
+    programsShowLess: "Afficher moins",
   },
 
   articles: {
@@ -150,6 +153,8 @@ export const fr: Messages = {
     unmuteAuthor: "Ne plus mettre en sourdine",
     mutedCollapsed: "{count} article(s) d'auteurs en sourdine masqué(s)",
     showMuted: "Afficher",
+    listShowAll: "Tout afficher ({count})",
+    listShowLess: "Afficher moins",
     globalEmptyTitle: "Aucun article global pour le moment",
     globalEmptyDesc: "Les articles que quelqu'un publie globalement apparaîtront ici.",
     unreadBadge: "{count} non lu(s)",

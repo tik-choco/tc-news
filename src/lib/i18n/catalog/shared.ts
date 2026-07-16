@@ -27,6 +27,9 @@ const ja = {
   unmuteAuthor: "ミュート解除",
   mutedCollapsed: "ミュート中の投稿者の記事 {count} 件を非表示",
   showMuted: "表示する",
+  // 共有記事一覧の「もっと見る」トグル(同じ考え方はfeed.homeShowAll/homeShowLess参照)
+  listShowAll: "すべて表示 ({count})",
+  listShowLess: "表示を減らす",
   globalEmptyTitle: "グローバルの記事はまだありません",
   globalEmptyDesc: "誰かがグローバルに配信すると、ここに表示されます。",
   unreadBadge: "未読 {count} 件",
@@ -85,6 +88,8 @@ const en: typeof ja = {
   unmuteAuthor: "Unmute",
   mutedCollapsed: "{count} articles from muted authors hidden",
   showMuted: "Show",
+  listShowAll: "Show all ({count})",
+  listShowLess: "Show fewer",
   globalEmptyTitle: "No global articles yet",
   globalEmptyDesc: "Articles anyone publishes globally will appear here.",
   unreadBadge: "{count} unread",

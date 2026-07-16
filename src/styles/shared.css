@@ -274,6 +274,14 @@
   color: var(--text-muted);
 }
 
+/* "Show all / show fewer" toggle below the shared-article list — same
+   centered-row treatment as HomeArticleSections.tsx's .home-show-toggle. */
+.shared-show-toggle {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--space-3);
+}
+
 .shared-muted-row {
   display: flex;
   align-items: center;

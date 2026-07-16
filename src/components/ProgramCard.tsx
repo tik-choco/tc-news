@@ -8,6 +8,7 @@
 // wires into SharedView's program rows).
 import type { JSX } from "preact";
 import { useState } from "preact/hooks";
+import { memo } from "preact/compat";
 import { Pause, Play, Radio, Volume2 } from "lucide-preact";
 import type { RadioProgram } from "../types";
 import { formatRelativeTime } from "./ArticleCard";
@@ -34,7 +35,12 @@ function ProgramCardThumb(props: { imageUrl: string; alt: string }): JSX.Element
   );
 }
 
-export function ProgramCard(props: {
+// memo()でラップ: FeedViewの番組グリッドは無関係なホーム状態(記事生成の
+// 進捗、フィード管理サイドバーの開閉など)の変化でも再レンダリングされるため、
+// program/isOwn/onOpenProgramが変わらないカードの再描画を防ぐ。呼び出し側
+// (FeedView.tsx)はonOpenProgramをインライン関数でラップしていないので、
+// デフォルトの浅い比較で十分効く。
+export const ProgramCard = memo(function ProgramCard(props: {
   program: RadioProgram;
   /** Created on this device (structural membership in loadPrograms()), even
    * before sharing — mirrors ProgramView's isOwnProgram. Own programs have
@@ -98,4 +104,4 @@ export function ProgramCard(props: {
       </button>
     </div>
   );
-}
+});

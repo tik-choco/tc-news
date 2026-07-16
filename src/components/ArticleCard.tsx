@@ -3,6 +3,7 @@
 // share/delete) and SharedView (received articles, read-only). Hover lifts
 // the card slightly (translateY + shadow) — see styles/components.css.
 import type { ComponentChildren, JSX } from "preact";
+import { memo } from "preact/compat";
 import { useEffect, useState } from "preact/hooks";
 import type { NewsArticle } from "../types";
 import { translate, useLocale, useT, type Locale } from "../lib/i18n";
@@ -14,21 +15,39 @@ const MINUTE_MS = 60_000;
 const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
 
+// Intl.RelativeTimeFormat construction is non-trivial and formatRelativeTime
+// is called once per card per render — cache one formatter per locale
+// instead of rebuilding it on every call (there are typically only 1-2
+// locales in play, so this map stays tiny for the life of the tab).
+const relativeTimeFormatters = new Map<string, Intl.RelativeTimeFormat>();
+
+function getRelativeTimeFormatter(locale: string): Intl.RelativeTimeFormat {
+  let rtf = relativeTimeFormatters.get(locale);
+  if (!rtf) {
+    rtf = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
+    relativeTimeFormatters.set(locale, rtf);
+  }
+  return rtf;
+}
+
 /** "3分前" 形式の相対時刻。1週間を超えたら日付表示に切り替える。 */
 export function formatRelativeTime(ms: number, locale: Locale): string {
   const diff = Date.now() - ms;
   if (diff < 0 || diff < MINUTE_MS) return translate(locale, "articles.justNow");
-  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
+  const rtf = getRelativeTimeFormatter(locale);
   if (diff < HOUR_MS) return rtf.format(-Math.floor(diff / MINUTE_MS), "minute");
   if (diff < DAY_MS) return rtf.format(-Math.floor(diff / HOUR_MS), "hour");
   if (diff < DAY_MS * 7) return rtf.format(-Math.floor(diff / DAY_MS), "day");
   return new Date(ms).toLocaleDateString(locale);
 }
 
-export function ArticleCard(props: {
+function ArticleCardImpl(props: {
   article: NewsArticle;
   active?: boolean;
-  onClick?: () => void;
+  /** Receives the clicked article's id — lets callers pass a stable handler
+   * reference (e.g. `onClick={onOpenArticle}`) instead of a per-card inline
+   * closure, so memo()'s shallow prop comparison actually holds. */
+  onClick?: (id: string) => void;
   /** Slot for per-card action buttons (share/delete). Rendered outside the
    * clickable title/excerpt area so buttons don't also trigger onClick. */
   actions?: ComponentChildren;
@@ -54,7 +73,7 @@ export function ArticleCard(props: {
   }, [thumbUrl]);
   return (
     <div class={`article-card${active ? " article-card--active" : ""}`}>
-      <button type="button" class="article-card-main" onClick={onClick}>
+      <button type="button" class="article-card-main" onClick={() => onClick?.(article.id)}>
         <div class="article-card-text">
           <h3 class="article-card-title">{article.title || t("articles.untitledArticle")}</h3>
           {article.excerpt ? <p class="article-card-excerpt">{article.excerpt}</p> : null}
@@ -97,3 +116,12 @@ export function ArticleCard(props: {
     </div>
   );
 }
+
+// Rendered in unbounded/large lists (HomeArticleSections, SharedView, ...) —
+// memoized so a parent re-render doesn't cascade into re-rendering every
+// visible card when this card's own props are unchanged (shallow compare).
+// onClick takes the article id (see above) so callers can pass a stable
+// handler reference; `actions` still gets a fresh element per render at
+// call sites that need per-card content (e.g. ReactionBar), which is fine
+// since ReactionBar itself is cheap and independently memo-able.
+export const ArticleCard = memo(ArticleCardImpl);

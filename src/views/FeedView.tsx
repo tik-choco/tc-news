@@ -45,6 +45,9 @@ import "../styles/programCard.css";
 
 type ProgramFilter = "all" | "articles" | "audio";
 
+/** 番組グリッドの既定表示件数。超えたらHomeArticleSectionsと同じトグルで全件表示。 */
+const PROGRAMS_DEFAULT_VISIBLE_COUNT = 9;
+
 // First occurrence wins — mirrors app.tsx's dedupeById (own programs go
 // first in the input array, so a program the user made AND received back
 // over P2P keeps showing as their own copy).
@@ -169,6 +172,10 @@ export function FeedView(props: {
   // 「すべて」表示中は番組が1件も無ければセクションごと隠す。「音声」表示中は
   // 0件でも(フィルタ自体が音声を選んでいるので)空状態を出す。
   const showProgramsSection = programFilter === "audio" || (programFilter === "all" && allPrograms.length > 0);
+  // 番組グリッドは既定で先頭PROGRAMS_DEFAULT_VISIBLE_COUNT件のみ表示し、
+  // HomeArticleSections(あなたの記事)と同じ「もっと見る」トグルの慣習に従う
+  // (allPrograms は自分の分50件+受信済み分で無制限に増えうるため)。
+  const [showAllPrograms, setShowAllPrograms] = useState(false);
 
   // フィード管理サイドバーの折りたたみ。保存値があればそれを、なければ
   // 「フィードがすでにあるなら畳む」を初期値にする(初回セットアップ中の
@@ -496,16 +503,31 @@ export function FeedView(props: {
             {allPrograms.length === 0 ? (
               <EmptyState icon={Radio} title={t("program.emptyTitle")} description={t("program.emptyDescription")} />
             ) : (
-              <div class="program-cards-grid">
-                {allPrograms.map((program) => (
-                  <ProgramCard
-                    key={program.id}
-                    program={program}
-                    isOwn={ownProgramIds.has(program.id)}
-                    onOpenProgram={onOpenProgram}
-                  />
-                ))}
-              </div>
+              <>
+                <div class="program-cards-grid">
+                  {(showAllPrograms ? allPrograms : allPrograms.slice(0, PROGRAMS_DEFAULT_VISIBLE_COUNT)).map(
+                    (program) => (
+                      <ProgramCard
+                        key={program.id}
+                        program={program}
+                        isOwn={ownProgramIds.has(program.id)}
+                        onOpenProgram={onOpenProgram}
+                      />
+                    ),
+                  )}
+                </div>
+                {allPrograms.length > PROGRAMS_DEFAULT_VISIBLE_COUNT ? (
+                  <div class="program-cards-toggle">
+                    <button
+                      type="button"
+                      class="btn btn-ghost btn-small"
+                      onClick={() => setShowAllPrograms((prev) => !prev)}
+                    >
+                      {showAllPrograms ? t("feed.programsShowLess") : t("feed.programsShowAll", { count: allPrograms.length })}
+                    </button>
+                  </div>
+                ) : null}
+              </>
             )}
           </section>
         ) : null}

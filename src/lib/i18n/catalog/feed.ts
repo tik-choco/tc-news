@@ -70,6 +70,8 @@ const ja = {
   inboxSelectModeExit: "完了",
   // ほぼ同内容のアイテム(複数ソースが同じ話題を配信)をまとめた際のバッジ
   inboxDupAria: "似た内容のアイテムが他に{count}件あります",
+  // 新着アイテムグリッドの段階的展開(最大500件を一度に描画しないため)
+  inboxLoadMore: "さらに{count}件を表示",
   // Home tab: content-type filter chips above the main column (unified feed —
   // 番組もホームで再生できるようになったので、記事だけ/音声だけに絞れる)
   filterAll: "すべて",
@@ -80,6 +82,10 @@ const ja = {
   // 番組カードの著者表示: 共有前の自分の番組にはauthorNameがまだ無いため、
   // 匿名ではなく「自分」であることを示すためのフォールバック
   ownAuthorLabel: "自分",
+  // Home tab: programs grid shows a few cards, with a toggle for the rest
+  // (same convention as homeShowAll/homeShowLess above)
+  programsShowAll: "すべて表示 ({count})",
+  programsShowLess: "表示を減らす",
 };
 
 const en: typeof ja = {
@@ -136,11 +142,14 @@ const en: typeof ja = {
   inboxSelectMode: "Select",
   inboxSelectModeExit: "Done",
   inboxDupAria: "{count} more similar items from other sources",
+  inboxLoadMore: "Show {count} more",
   filterAll: "All",
   filterArticles: "Articles",
   filterAudio: "Audio",
   programsHeading: "Programs",
   ownAuthorLabel: "You",
+  programsShowAll: "Show all ({count})",
+  programsShowLess: "Show fewer",
 };
 
 export const feed = { ja, en };

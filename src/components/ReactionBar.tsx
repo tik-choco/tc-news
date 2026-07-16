@@ -6,7 +6,7 @@
 import { useEffect, useState } from "preact/hooks";
 import type { JSX } from "preact";
 import { REACTION_EMOJI, REACTION_KINDS, type ReactionKind } from "../types";
-import { countsFor, hasReacted, subscribeReactions } from "../lib/reactionStore";
+import { countsFor, reactedKindsFor, subscribeReactions } from "../lib/reactionStore";
 import { useT } from "../lib/i18n";
 import "../styles/reactions.css";
 
@@ -25,13 +25,17 @@ export function ReactionBar(props: {
   const { targetId, myDid, onReact, compact } = props;
   const t = useT();
   // Bump-driven re-render: reactionStore is plain localStorage state, not a
-  // signal, so we re-read countsFor()/hasReacted() on every render and just
-  // need a way to trigger those re-renders when reactions change anywhere.
+  // signal, so we re-read countsFor()/reactedKindsFor() on every render and
+  // just need a way to trigger those re-renders when reactions change
+  // anywhere.
   const [, bump] = useState(0);
   useEffect(() => subscribeReactions(() => bump((n) => n + 1)), []);
   const [busyKind, setBusyKind] = useState<ReactionKind | null>(null);
 
   const counts = countsFor(targetId);
+  // One indexed lookup instead of up to REACTION_KINDS.length separate
+  // hasReacted() calls (see reactionStore.ts's reactedKindsFor()).
+  const reactedKinds = myDid ? reactedKindsFor(targetId, myDid) : null;
   const allZero = REACTION_KINDS.every((kind) => counts[kind] === 0);
   const kinds =
     compact && !(allZero && onReact) ? REACTION_KINDS.filter((kind) => counts[kind] > 0) : REACTION_KINDS;
@@ -51,7 +55,7 @@ export function ReactionBar(props: {
       {kinds.map((kind) => {
         const emoji = REACTION_EMOJI[kind];
         const count = counts[kind];
-        const own = Boolean(myDid) && hasReacted(targetId, kind, myDid as string);
+        const own = Boolean(reactedKinds?.has(kind));
         const label = t("shared.reactionButtonAria", { emoji });
 
         if (!onReact) {

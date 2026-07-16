@@ -74,16 +74,61 @@ function parse(raw: string | null): ReactionRecord[] {
 
 // In-memory read-through cache. `cachedRaw` is the exact localStorage string
 // the cache was built from; a mismatch (including null, e.g. after
-// localStorage.clear()) means the cache is stale and gets rebuilt.
+// localStorage.clear()) means the cache is stale and gets rebuilt. Alongside
+// the flat `cachedRecords` array, we maintain two indexes so per-card lookups
+// (countsFor/hasReacted, called once/up-to-4-times per visible card on every
+// render by ReactionBar.tsx) are O(1) instead of an O(n) scan over every
+// reaction this client has ever seen — same invalidation trigger, rebuilt in
+// the same place (see rebuildIndexes(), called from both readAll()'s stale
+// branch and persist()) rather than a second independent cache mechanism.
 let cacheInitialized = false;
 let cachedRaw: string | null = null;
 let cachedRecords: ReactionRecord[] = [];
+/** targetId -> zero-filled per-kind counts. */
+let cachedCounts: Map<string, Record<ReactionKind, number>> = new Map();
+/** targetId -> Set of `${kind}:${fromId}` for that target, for O(1) hasReacted(). */
+let cachedReactedIndex: Map<string, Set<string>> = new Map();
+/** `${targetId}:${fromId}` -> Set of kinds that fromId reacted with on targetId. */
+let cachedReactedKinds: Map<string, Set<ReactionKind>> = new Map();
+
+function rebuildIndexes(records: ReactionRecord[]): void {
+  const counts = new Map<string, Record<ReactionKind, number>>();
+  const reactedIndex = new Map<string, Set<string>>();
+  const reactedKinds = new Map<string, Set<ReactionKind>>();
+  for (const r of records) {
+    let c = counts.get(r.targetId);
+    if (!c) {
+      c = zeroCounts();
+      counts.set(r.targetId, c);
+    }
+    c[r.kind] += 1;
+
+    let reactedSet = reactedIndex.get(r.targetId);
+    if (!reactedSet) {
+      reactedSet = new Set();
+      reactedIndex.set(r.targetId, reactedSet);
+    }
+    reactedSet.add(`${r.kind}:${r.fromId}`);
+
+    const kindsKey = `${r.targetId}:${r.fromId}`;
+    let kindsSet = reactedKinds.get(kindsKey);
+    if (!kindsSet) {
+      kindsSet = new Set();
+      reactedKinds.set(kindsKey, kindsSet);
+    }
+    kindsSet.add(r.kind);
+  }
+  cachedCounts = counts;
+  cachedReactedIndex = reactedIndex;
+  cachedReactedKinds = reactedKinds;
+}
 
 function readAll(): ReactionRecord[] {
   const raw = kvGetSync(REACTIONS_KEY);
   if (cacheInitialized && raw === cachedRaw) return cachedRecords;
   cachedRaw = raw;
   cachedRecords = parse(raw);
+  rebuildIndexes(cachedRecords);
   cacheInitialized = true;
   return cachedRecords;
 }
@@ -108,6 +153,7 @@ function persist(records: ReactionRecord[]): ReactionRecord[] {
   kvSetSync(REACTIONS_KEY, raw);
   cachedRaw = raw;
   cachedRecords = capped;
+  rebuildIndexes(cachedRecords);
   cacheInitialized = true;
   return capped;
 }
@@ -129,26 +175,39 @@ export function loadReactions(): ReactionRecord[] {
  */
 export function addReaction(record: ReactionRecord): boolean {
   const all = readAll();
-  const isDuplicate = all.some(
-    (r) => r.targetId === record.targetId && r.kind === record.kind && r.fromId === record.fromId,
-  );
-  if (isDuplicate) return false;
+  if (hasReacted(record.targetId, record.kind, record.fromId)) return false;
   persist([...all, record]);
   notify();
   return true;
 }
 
+/** O(1) via the `${targetId}:${fromId}`-indexed reactedKinds map (see readAll()/rebuildIndexes()). */
 export function hasReacted(targetId: string, kind: ReactionKind, fromId: string): boolean {
-  return readAll().some((r) => r.targetId === targetId && r.kind === kind && r.fromId === fromId);
+  readAll();
+  return cachedReactedIndex.get(targetId)?.has(`${kind}:${fromId}`) ?? false;
 }
 
-/** Zero-filled per-kind counts for a single target (article or program). */
+/**
+ * Zero-filled per-kind counts for a single target (article or program).
+ * O(1) via the targetId-indexed counts map (see readAll()/rebuildIndexes());
+ * returns a fresh copy each call so callers can't mutate the cached object.
+ */
 export function countsFor(targetId: string): Record<ReactionKind, number> {
-  const counts = zeroCounts();
-  for (const r of readAll()) {
-    if (r.targetId === targetId) counts[r.kind] += 1;
-  }
-  return counts;
+  readAll();
+  const counts = cachedCounts.get(targetId);
+  return counts ? { ...counts } : zeroCounts();
+}
+
+/**
+ * Which reaction kinds `fromId` has already used on `targetId`, in one O(1)
+ * lookup — lets a caller (e.g. ReactionBar.tsx) replace up-to-4 separate
+ * hasReacted() calls (one per REACTION_KINDS entry) with a single call.
+ * Returns a fresh Set each call so callers can't mutate the cached one.
+ */
+export function reactedKindsFor(targetId: string, fromId: string): Set<ReactionKind> {
+  readAll();
+  const kinds = cachedReactedKinds.get(`${targetId}:${fromId}`);
+  return kinds ? new Set(kinds) : new Set();
 }
 
 // --- Same-tab pub-sub (mirrors lib/onboarding.ts's listener set) -----------
