@@ -361,6 +361,22 @@
   min-width: 0;
 }
 
+/* --- Script translation toolbar --------------------------------------------
+   Language picker + translate/toggle buttons + status badges, sitting right
+   above the script list itself (see ProgramView's LanguagePicker/translate
+   wiring, lib/programTranslate.ts). Same flex-row-that-wraps shape as
+   reader-modal-toolbar-actions in readerModal.css, kept as a local rule here
+   since that file isn't part of program.css's import surface. */
+
+.program-script-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border);
+}
+
 /* --- Script / segment list -------------------------------------------------- */
 
 .program-script {

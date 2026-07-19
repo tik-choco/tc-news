@@ -1,5 +1,5 @@
 // Framework-agnostic, module-singleton sequential job queue for LLM-backed
-// jobs — translation (feed items and articles) as well as generation
+// jobs — translation (feed items, articles, and program scripts) as well as generation
 // (article generation, editorial/briefing generation, program generation,
 // program audio rendering). Modeled on tc-pdf-viewer's AI job queue (see
 // tc-pdf-viewer/src/App.jsx: aiJobs / processAiQueue / enqueueAiJob /
@@ -32,7 +32,7 @@
 
 export type JobStatus = "queued" | "running" | "cancelling" | "complete" | "failed" | "cancelled";
 
-export type JobKind = "feed" | "article" | "generate" | "orchestrate" | "program" | "programAudio";
+export type JobKind = "feed" | "article" | "generate" | "orchestrate" | "program" | "programAudio" | "programTranslate";
 
 export interface JobMeta {
   kind: JobKind;

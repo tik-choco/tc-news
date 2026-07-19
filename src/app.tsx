@@ -47,6 +47,7 @@ import { LOCALE_LABELS, useT, type Locale } from "./lib/i18n";
 import { translateArticle } from "./lib/translate";
 import { getTranslation, saveTranslation, type ArticleTranslation } from "./lib/translationStore";
 import { enqueueJob } from "./lib/jobQueue";
+import { clearTranslationProgress, publishTranslationProgress } from "./lib/translationProgress";
 import { FeedView } from "./views/FeedView";
 import { SharedView } from "./views/SharedView";
 import { ProgramView } from "./views/ProgramView";
@@ -278,42 +279,68 @@ export function App() {
   async function handleTranslateOwnArticle(article: NewsArticle, lang: Locale): Promise<ArticleTranslation> {
     const existing = getTranslation(article.id, lang);
     if (existing) return existing;
-    return enqueueJob({ kind: "article", targetId: article.id, label: article.title, lang }, async (signal) => {
-      const content = await translateArticle(article, {
-        profileId: "",
-        targetLanguage: LOCALE_LABELS[lang],
-      });
-      // translateArticle is a single, uninterruptible LLM call — this is the
-      // first point after it resolves where a cancellation can actually take
-      // effect, so a cancelled job doesn't go on to save/share its result.
-      if (signal.aborted) {
-        const err = new Error("Request cancelled.");
-        err.name = "AbortError";
-        throw err;
-      }
-      if (!article.shared) {
-        return saveTranslation({
-          articleId: article.id,
+    return enqueueJob({ kind: "article", targetId: article.id, label: article.title, lang }, async (signal, report) => {
+      try {
+        const content = await translateArticle(article, {
+          profileId: "",
+          targetLanguage: LOCALE_LABELS[lang],
           lang,
-          title: content.title,
-          excerpt: content.excerpt,
-          body: content.body,
-          translatorDid: did,
-          translatorName: displayName,
-          translatedAt: Date.now(),
+          signal,
+          onProgress: (p) => {
+            publishTranslationProgress({
+              kind: "article",
+              targetId: article.id,
+              lang,
+              title: p.title,
+              subtitle: p.excerpt,
+              body: p.body,
+              doneChunks: p.doneChunks,
+              totalChunks: p.totalChunks,
+            });
+            if (p.totalChunks > 0) report(`${p.doneChunks}/${p.totalChunks}`);
+          },
         });
-      }
-      const record = await shareTranslation(article.id, lang, content);
-      if (settings.globalShare && settings.roomId !== GLOBAL_ARTICLES_ROOM_ID) {
-        try {
-          await globalRoom.shareTranslation(article.id, lang, content);
-        } catch (err) {
-          // Room translation already succeeded; the global re-publish is a
-          // best-effort extra and must not fail the user's action.
-          console.warn("tc-news: failed to publish translation to global room", err);
+        // translateArticle checks the signal between chunk calls, but a
+        // cancellation that lands while the *final* chunk is in flight still
+        // resolves normally — catch that here so a cancelled job doesn't go
+        // on to save/share its result. (The per-chunk partial saves are kept;
+        // they're what makes the next attempt resumable.)
+        if (signal.aborted) {
+          const err = new Error("Request cancelled.");
+          err.name = "AbortError";
+          throw err;
         }
+        if (!article.shared) {
+          return saveTranslation({
+            articleId: article.id,
+            lang,
+            title: content.title,
+            excerpt: content.excerpt,
+            body: content.body,
+            translatorDid: did,
+            translatorName: displayName,
+            translatedAt: Date.now(),
+          });
+        }
+        const record = await shareTranslation(article.id, lang, content);
+        if (settings.globalShare && settings.roomId !== GLOBAL_ARTICLES_ROOM_ID) {
+          try {
+            await globalRoom.shareTranslation(article.id, lang, content);
+          } catch (err) {
+            // Room translation already succeeded; the global re-publish is a
+            // best-effort extra and must not fail the user's action.
+            console.warn("tc-news: failed to publish translation to global room", err);
+          }
+        }
+        return record;
+      } finally {
+        // The job (and its onProgress emits) can outlive whichever modal
+        // opened it — always drop the live-progress entry on settle
+        // (success, failure, or cancel) so readers fall back to the durable
+        // translationStore/partialTranslationStore instead of a stale
+        // in-memory snapshot.
+        clearTranslationProgress("article", article.id, lang);
       }
-      return record;
     });
   }
 
@@ -328,21 +355,43 @@ export function App() {
   ): Promise<ArticleTranslation> {
     const existing = getTranslation(article.id, lang);
     if (existing) return existing;
-    return enqueueJob({ kind: "article", targetId: article.id, label: article.title, lang }, async (signal) => {
-      const content = await translateArticle(article, {
-        profileId: "",
-        targetLanguage: LOCALE_LABELS[lang],
-      });
-      // See handleTranslateOwnArticle: stop a cancelled job before it shares
-      // its (unwanted) result into the room.
-      if (signal.aborted) {
-        const err = new Error("Request cancelled.");
-        err.name = "AbortError";
-        throw err;
+    return enqueueJob({ kind: "article", targetId: article.id, label: article.title, lang }, async (signal, report) => {
+      try {
+        const content = await translateArticle(article, {
+          profileId: "",
+          targetLanguage: LOCALE_LABELS[lang],
+          lang,
+          signal,
+          onProgress: (p) => {
+            publishTranslationProgress({
+              kind: "article",
+              targetId: article.id,
+              lang,
+              title: p.title,
+              subtitle: p.excerpt,
+              body: p.body,
+              doneChunks: p.doneChunks,
+              totalChunks: p.totalChunks,
+            });
+            if (p.totalChunks > 0) report(`${p.doneChunks}/${p.totalChunks}`);
+          },
+        });
+        // See handleTranslateOwnArticle: a cancellation during the final
+        // chunk still resolves — stop the job here before it shares its
+        // (unwanted) result into the room.
+        if (signal.aborted) {
+          const err = new Error("Request cancelled.");
+          err.name = "AbortError";
+          throw err;
+        }
+        return source === "room"
+          ? shareTranslation(article.id, lang, content)
+          : globalRoom.shareTranslation(article.id, lang, content);
+      } finally {
+        // See handleTranslateOwnArticle's finally: this job can outlive the
+        // modal that started it.
+        clearTranslationProgress("article", article.id, lang);
       }
-      return source === "room"
-        ? shareTranslation(article.id, lang, content)
-        : globalRoom.shareTranslation(article.id, lang, content);
     });
   }
 

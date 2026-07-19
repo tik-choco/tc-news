@@ -13,6 +13,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@breezystack/lamejs": "^1.2.7",
     "@tik-choco/mistai": "github:tik-choco-lab/mistai",
     "dompurify": "^3.2.4",
     "lucide-preact": "^0.577.0",

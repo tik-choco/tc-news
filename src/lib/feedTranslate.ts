@@ -16,11 +16,33 @@
 // HTML on its own. Chunks are translated sequentially — not Promise.all —
 // because the target is frequently a local model / rate-limited endpoint
 // where concurrent requests would just queue or fail.
+//
+// Streaming + resume (ported from tc-pdf-viewer's ai.js translateMarkdown's
+// onPartial/notifyProgress idea, adapted to this module's sequential-chunk
+// shape): a feed-item translation can involve several chunk-sized LLM calls
+// in a row, which for a slow/local model can take a while with nothing
+// visible happening. onProgress lets callers render text as it streams in
+// (title/summary as soon as they resolve, then each HTML chunk's own
+// in-flight partial text, throttled — see emitProgress below — plus a full
+// emit whenever a chunk finishes). When itemId+lang are both supplied, every
+// completed step (title/summary, then each finished chunk) is snapshotted to
+// partialFeedTranslationStore so that if the job is abandoned (nav away,
+// reload, an error) a subsequent call with the same input+itemId+lang can
+// pick up where it left off instead of re-running LLM calls that already
+// succeeded — sourceSig + totalChunks guard against resuming into stale
+// state when the underlying page content or chunking has changed.
 
 import type { ChatMessage } from "@tik-choco/mistai";
 import DOMPurify from "dompurify";
 import { requestChatCompletion } from "./llm";
 import { tGlobal } from "./i18n";
+import {
+  clearPartialFeedTranslation,
+  computeFeedTranslationSourceSig,
+  getPartialFeedTranslation,
+  savePartialFeedTranslation,
+  type PartialFeedTranslation,
+} from "./partialFeedTranslationStore";
 
 export interface FeedTranslationInput {
   title: string;
@@ -35,10 +57,29 @@ export interface TranslatedFeedContent {
   truncated: boolean; // true when input.html exceeded the translation cap and only a prefix was translated
 }
 
+/** Emitted via TranslateFeedOptions.onProgress as the translation streams
+ * in. Fired once after the title/summary call resolves (or is skipped via
+ * resume), then again on every chunk-translation delta (throttled) and every
+ * chunk completion — see emitProgress's comment for exactly what `html`
+ * contains at each stage. */
+export interface FeedTranslationProgressUpdate {
+  title: string | null; // null until the title/summary call resolves
+  summary: string | null;
+  html: string; // DOMPurify-sanitized: completed chunks joined + current chunk's streamed partial; "" when input.html is null
+  doneChunks: number;
+  totalChunks: number;
+}
+
 export interface TranslateFeedOptions {
   profileId: string; // LLM preset id, "" = shared-config default (same convention as translate.ts)
   targetLanguage: string; // endonym of target language, e.g. "English" (LOCALE_LABELS value)
+  itemId?: string; // FeedItem.id for partial-store keying
+  // Locale code for partial-store keying. itemId and lang must BOTH be set
+  // for partial save/resume to be active — either alone is treated as "not
+  // resumable", so existing callers that pass neither keep working unchanged.
+  lang?: string;
   signal?: AbortSignal; // optional cooperative-cancellation signal (translation jobs run through lib/jobQueue)
+  onProgress?: (p: FeedTranslationProgressUpdate) => void; // optional streaming progress callback
 }
 
 // Total amount of extracted-page HTML we're willing to translate at all.
@@ -48,6 +89,14 @@ const MAX_TRANSLATE_HTML_CHARS = 40_000;
 // Per-LLM-call chunk size, well under typical context limits even after
 // accounting for the prompt overhead and the translated reply itself.
 const TRANSLATE_HTML_CHUNK_CHARS = 12_000;
+
+// Minimum spacing between onProgress emits driven by in-flight streaming
+// deltas (as opposed to the unconditional emits on step completion, below).
+// DOMPurify.sanitize() isn't free, and a chat completion can emit deltas far
+// faster than that's worth running per-token; anything throttled away is
+// still caught by the next chunk-completion emit, so no progress is lost,
+// only coalesced.
+const PROGRESS_THROTTLE_MS = 150;
 
 // Cooperative cancellation: checked between LLM calls, never while one is in
 // flight — requestChatCompletion doesn't accept an AbortSignal, so an
@@ -128,6 +177,17 @@ export function splitHtmlIntoChunks(html: string, maxChars: number): string[] {
   return chunks;
 }
 
+// Caps + splits input.html the same way translateHtml always has, but as a
+// standalone step so translateFeedContent can know `totalChunks` up front —
+// needed to validate a resume candidate (its totalChunks must match this
+// call's, or the source page's structure changed and the chunk boundaries
+// from the earlier attempt no longer line up with this one's).
+function prepareHtmlChunks(html: string): { chunks: string[]; truncated: boolean } {
+  const truncated = html.length > MAX_TRANSLATE_HTML_CHARS;
+  const capped = truncated ? html.slice(0, MAX_TRANSLATE_HTML_CHARS) : html;
+  return { chunks: splitHtmlIntoChunks(capped, TRANSLATE_HTML_CHUNK_CHARS), truncated };
+}
+
 async function translateTitleSummary(
   input: FeedTranslationInput,
   opts: TranslateFeedOptions,
@@ -163,7 +223,16 @@ async function translateTitleSummary(
   }
 }
 
-async function translateHtmlChunk(chunk: string, opts: TranslateFeedOptions): Promise<string> {
+// `onDelta`, when given, receives the accumulated (not incremental) text of
+// this chunk's in-flight reply after every streamed fragment — mirrors
+// requestChatCompletion/streamChatCompletion's own (delta, full) shape but
+// this module's callers only ever want `full`, so we narrow it here rather
+// than forwarding both through another layer.
+async function translateHtmlChunk(
+  chunk: string,
+  opts: TranslateFeedOptions,
+  onDelta?: (fullSoFar: string) => void,
+): Promise<string> {
   const messages: ChatMessage[] = [
     { role: "system", content: buildHtmlChunkSystemPrompt(opts.targetLanguage) },
     { role: "user", content: chunk },
@@ -171,7 +240,10 @@ async function translateHtmlChunk(chunk: string, opts: TranslateFeedOptions): Pr
 
   let responseText: string;
   try {
-    responseText = await requestChatCompletion(opts.profileId, messages, { temperature: 0.2 });
+    responseText = await requestChatCompletion(opts.profileId, messages, {
+      temperature: 0.2,
+      onDelta: onDelta ? (_delta, full) => onDelta(full) : undefined,
+    });
   } catch (err) {
     // Same reasoning as translateTitleSummary: don't wrap cancellation.
     if (err instanceof Error && err.name === "AbortError") throw err;
@@ -182,34 +254,13 @@ async function translateHtmlChunk(chunk: string, opts: TranslateFeedOptions): Pr
   return stripCodeFences(responseText);
 }
 
-async function translateHtml(
-  html: string,
-  opts: TranslateFeedOptions,
-): Promise<{ html: string; truncated: boolean }> {
-  const truncated = html.length > MAX_TRANSLATE_HTML_CHARS;
-  const capped = truncated ? html.slice(0, MAX_TRANSLATE_HTML_CHARS) : html;
-
-  const chunks = splitHtmlIntoChunks(capped, TRANSLATE_HTML_CHUNK_CHARS);
-
-  // Sequential, not Promise.all: the target is frequently a local model /
-  // rate-limited endpoint where concurrent requests would just queue or fail.
-  const translatedChunks: string[] = [];
-  for (const chunk of chunks) {
-    // Cancellation takes effect only between chunk calls, not mid-call — see
-    // throwIfAborted's comment above.
-    throwIfAborted(opts.signal);
-    translatedChunks.push(await translateHtmlChunk(chunk, opts));
-  }
-
-  const joined = translatedChunks.join("\n");
-  // Defense-in-depth: translation output flows into dangerouslySetInnerHTML
-  // (same reasoning as pageExtract.ts's fetchReadablePage), even though the
-  // input was already sanitized before we ever saw it. If sanitize somehow
-  // collapses everything to an empty string (unexpected — the input passed
-  // sanitization once already), prefer showing the untranslated original
-  // over silently rendering nothing.
-  const sanitized = DOMPurify.sanitize(joined).trim();
-  return { html: sanitized.length > 0 ? sanitized : html, truncated };
+// Defense-in-depth: translation output flows into dangerouslySetInnerHTML
+// (same reasoning as pageExtract.ts's fetchReadablePage), even though the
+// input was already sanitized before we ever saw it. Applied identically to
+// the final result and to every streamed onProgress emit, since a partial
+// chunk mid-stream is exactly as untrusted as a finished one.
+function sanitizeJoinedHtml(pieces: string[]): string {
+  return DOMPurify.sanitize(pieces.join("\n")).trim();
 }
 
 export async function translateFeedContent(
@@ -218,12 +269,116 @@ export async function translateFeedContent(
 ): Promise<TranslatedFeedContent> {
   throwIfAborted(opts.signal);
 
-  const { title, summary } = await translateTitleSummary(input, opts);
+  // Partial save/resume only activates when both keying fields are present —
+  // see TranslateFeedOptions' comment. Kept as one boolean so every call site
+  // below reads the same "is this job resumable at all" fact.
+  const resumable = !!(opts.itemId && opts.lang);
+  const sourceSig = computeFeedTranslationSourceSig([input.title, input.summary, input.html ?? ""]);
+  const { chunks, truncated } = input.html !== null ? prepareHtmlChunks(input.html) : { chunks: [], truncated: false };
+  const totalChunks = chunks.length;
+
+  // Resume candidate must match both the source content (sourceSig) and this
+  // call's chunk count (totalChunks) — either mismatching means the earlier
+  // attempt's chunk boundaries don't correspond to this one's, so resuming
+  // into it would silently skip or duplicate content. A non-matching partial
+  // is stale by definition; discard it now rather than let it linger for a
+  // never-arriving matching call.
+  let resumed: PartialFeedTranslation | null = null;
+  if (resumable) {
+    const candidate = getPartialFeedTranslation(opts.itemId!, opts.lang!);
+    if (candidate && candidate.sourceSig === sourceSig && candidate.totalChunks === totalChunks) {
+      resumed = candidate;
+    } else if (candidate) {
+      clearPartialFeedTranslation(opts.itemId!, opts.lang!);
+    }
+  }
+
+  const savePartial = (title: string | null, summary: string | null, doneChunks: string[]): void => {
+    if (!resumable) return;
+    savePartialFeedTranslation({
+      itemId: opts.itemId!,
+      lang: opts.lang!,
+      title,
+      summary,
+      chunks: doneChunks,
+      totalChunks,
+      truncated,
+      sourceSig,
+      updatedAt: Date.now(),
+    });
+  };
+
+  // `currentPartial` is this chunk's in-flight streamed text (null when no
+  // chunk is mid-stream, e.g. right after the title/summary step or right
+  // after a chunk just finished); folded into the sanitized preview but never
+  // pushed into `completedChunks` itself until the chunk actually resolves.
+  const emitProgress = (title: string | null, summary: string | null, completedChunks: string[], currentPartial: string | null): void => {
+    if (!opts.onProgress) return;
+    const html =
+      input.html === null
+        ? ""
+        : currentPartial !== null
+          ? sanitizeJoinedHtml([...completedChunks, currentPartial])
+          : sanitizeJoinedHtml(completedChunks);
+    opts.onProgress({ title, summary, html, doneChunks: completedChunks.length, totalChunks });
+  };
+
+  let title: string;
+  let summary: string;
+  if (resumed && resumed.title !== null) {
+    // Title/summary already succeeded in the earlier attempt — skip the LLM
+    // call entirely, it's part of what resuming is meant to save.
+    title = resumed.title;
+    summary = resumed.summary ?? "";
+  } else {
+    const result = await translateTitleSummary(input, opts);
+    title = result.title;
+    summary = result.summary;
+  }
+
+  const completedChunks: string[] = resumed ? resumed.chunks.slice() : [];
+  emitProgress(title, summary, completedChunks, null);
+  savePartial(title, summary, completedChunks);
 
   if (input.html === null) {
+    // Nothing left to translate — this "job" is already done; don't leave a
+    // partial behind for a chunk phase that will never run.
+    if (resumable) clearPartialFeedTranslation(opts.itemId!, opts.lang!);
     return { title, summary, html: null, truncated: false };
   }
 
-  const { html, truncated } = await translateHtml(input.html, opts);
+  // Sequential, not Promise.all: the target is frequently a local model /
+  // rate-limited endpoint where concurrent requests would just queue or
+  // fail. Starts at completedChunks.length, not 0, so a resumed job picks up
+  // exactly where the earlier attempt left off.
+  let lastThrottledEmit = 0;
+  for (let i = completedChunks.length; i < chunks.length; i++) {
+    // Cancellation takes effect only between chunk calls, not mid-call — see
+    // throwIfAborted's comment above.
+    throwIfAborted(opts.signal);
+
+    const translated = await translateHtmlChunk(chunks[i], opts, (fullSoFar) => {
+      const now = Date.now();
+      if (now - lastThrottledEmit < PROGRESS_THROTTLE_MS) return;
+      lastThrottledEmit = now;
+      emitProgress(title, summary, completedChunks, fullSoFar);
+    });
+
+    completedChunks.push(translated);
+    savePartial(title, summary, completedChunks);
+    // Unconditional, un-throttled emit on chunk completion: recovers any
+    // in-flight delta the throttle above coalesced away, and is the only
+    // signal a caller gets for chunks small enough to finish inside one
+    // throttle window.
+    emitProgress(title, summary, completedChunks, null);
+  }
+
+  const joined = sanitizeJoinedHtml(completedChunks);
+  // If sanitize somehow collapses everything to an empty string (unexpected
+  // — the input passed sanitization once already), prefer showing the
+  // untranslated original over silently rendering nothing.
+  const html = joined.length > 0 ? joined : input.html;
+
+  if (resumable) clearPartialFeedTranslation(opts.itemId!, opts.lang!);
   return { title, summary, html, truncated };
 }

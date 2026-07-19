@@ -18,6 +18,7 @@ import type { JSX } from "preact";
 import {
   Check,
   Download,
+  Languages,
   Loader2,
   Mic,
   Pause,
@@ -32,12 +33,17 @@ import {
 import type { NewsArticle, ReactionKind, RadioProgram } from "../types";
 import { EmptyState } from "../components/EmptyState";
 import { ReactionBar } from "../components/ReactionBar";
+import { LanguagePicker } from "../components/LanguagePicker";
 import { formatRelativeTime } from "../components/ArticleCard";
-import { LOCALE_LABELS, useLocale, useT } from "../lib/i18n";
+import { LOCALE_LABELS, useLocale, useT, type Locale } from "../lib/i18n";
 import { mediaPreviewsEnabled } from "../lib/linkPreview";
 import { addProgram, loadPrograms, removeProgram, upsertProgram } from "../lib/programStore";
 import { subscribeKvHydrated } from "../lib/kvStore";
 import { generateProgram } from "../lib/programGenerate";
+import { translateProgram } from "../lib/programTranslate";
+import { getProgramTranslation, saveProgramTranslation } from "../lib/programTranslationStore";
+import { clearTranslationProgress, publishTranslationProgress } from "../lib/translationProgress";
+import { useTranslationProgress } from "../hooks/useTranslationProgress";
 import { parseRuby } from "../lib/ruby";
 import { activeTtsEngine, isTtsSupported, listVoices, pickDefaultVoice } from "../lib/tts";
 import { downloadProgramAudio, renderProgramAudio } from "../lib/programAudio";
@@ -221,7 +227,133 @@ export function ProgramView(props: {
     receivedPrograms.find((p) => p.id === selectedProgramId) ??
     null;
   const isOwnProgram = selectedProgram ? programs.some((p) => p.id === selectedProgram.id) : false;
-  const hasAudio = (selectedProgram?.audioCids?.length ?? 0) > 0;
+
+  // --- Script translation (lib/programTranslate.ts) ---------------------
+  // Local-only preview of the selected program's script (title + segment
+  // text) in another language — same rationale as feedTranslate.ts: never
+  // shared over P2P, just a per-viewer convenience. Once a translation is
+  // fully cached, playback follows the on-screen script too: rendered
+  // translated audio (if the viewer made one, see handleRenderTranslatedAudio
+  // below) plays if present, else live TTS speaks the translated text in a
+  // target-language voice — see displayProgram below. Only while a
+  // translation is still streaming (no cached result yet) does audio keep
+  // playing the original, since there's no complete translated text/audio to
+  // switch to.
+  //
+  // targetLang defaults to the current UI locale and resets (along with the
+  // toggle/error below) whenever the selected program changes — mirrors
+  // ArticleReaderModal's article.id effect.
+  const [targetLang, setTargetLang] = useState<Locale>(locale);
+  const [showTranslated, setShowTranslated] = useState(false);
+  const [translateError, setTranslateError] = useState<string | null>(null);
+  // Lets a translation job's continuation (below) tell whether the user has
+  // since selected a different program before it touches showTranslated —
+  // same guard idiom as ArticleReaderModal's articleIdRef.
+  const selectedProgramIdRef = useRef<string | null>(null);
+  selectedProgramIdRef.current = selectedProgramId;
+
+  useEffect(() => {
+    setTargetLang(locale);
+    setShowTranslated(false);
+    setTranslateError(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedProgram?.id]);
+
+  // Not stateful — re-read on every render, same idiom as
+  // ArticleReaderModal's cachedTranslation.
+  const cachedProgramTranslation = selectedProgram ? getProgramTranslation(selectedProgram.id, targetLang) : null;
+  // Live streaming progress for this program×targetLang, regardless of which
+  // surface started the translation job (lib/translationProgress is a module
+  // singleton keyed by targetId×lang, not by job origin). targetId falls
+  // back to "" when nothing is selected so the hook is still called
+  // unconditionally on every render (Rules of Hooks).
+  const liveProgramProgress = useTranslationProgress("program", selectedProgram?.id ?? "", targetLang);
+  // The live progress's per-segment translations are carried through
+  // TranslationProgress.body as a JSON-encoded string array — that field is
+  // an opaque per-kind payload (article/feed use it for Markdown/HTML text),
+  // and a program's progress is naturally an array of segment strings rather
+  // than one blob of prose, so JSON-encoding it here is simpler than
+  // shoehorning segments into a joined-text convention. Defensively parsed:
+  // an unexpected shape just falls back to showing original segments.
+  let liveProgramSegmentTexts: string[] | null = null;
+  if (liveProgramProgress) {
+    try {
+      const parsed: unknown = JSON.parse(liveProgramProgress.body || "[]");
+      if (Array.isArray(parsed) && parsed.every((v) => typeof v === "string")) {
+        liveProgramSegmentTexts = parsed as string[];
+      }
+    } catch {
+      liveProgramSegmentTexts = null;
+    }
+  }
+  // A program without a recorded generation-time locale (lang) can't be
+  // compared against targetLang, so the translate affordance stays available
+  // rather than guessing — mirrors the "targetLang===program.lang" hide rule
+  // for the common (lang known) case.
+  const programNeedsTranslation = selectedProgram ? !selectedProgram.lang || selectedProgram.lang !== targetLang : false;
+  const translateJobPending = selectedProgram
+    ? findPendingJob("programTranslate", selectedProgram.id, targetLang) !== null
+    : false;
+  // True while the script pane should render translated (not original) text:
+  // either a finished cached translation the user has toggled on, or a
+  // still-streaming job with no cached result yet to fall back to.
+  const showingCachedProgramTranslation = showTranslated && !!cachedProgramTranslation;
+  const showingLiveProgramTranslation = !!liveProgramProgress && !cachedProgramTranslation;
+
+  // Synthesized "translated variant" of the selected program, used for
+  // playback/rendering/downloading/audio-badge decisions below — id is kept
+  // identical to selectedProgram.id so the player's "is this program
+  // playing" check (player.program?.id === selectedProgram.id) and segment
+  // highlighting keep working unchanged whichever variant is on screen.
+  // ruby carries no meaning for translated text (see programTranslate.ts's
+  // module header) so it's dropped. Only built once a translation is fully
+  // cached (showingCachedProgramTranslation) — a still-streaming live
+  // translation has no complete segmentTexts/audio to synthesize from yet,
+  // so audio keeps playing the original script until the translation
+  // finishes and gets cached, same as before this feature.
+  const displayProgram: RadioProgram | null =
+    selectedProgram && showingCachedProgramTranslation && cachedProgramTranslation
+      ? {
+          ...selectedProgram,
+          title: cachedProgramTranslation.title,
+          segments: selectedProgram.segments.map((s, index) => ({
+            articleId: s.articleId,
+            text: cachedProgramTranslation.segmentTexts[index] ?? s.text,
+          })),
+          lang: targetLang,
+          audioCids: cachedProgramTranslation.audioCids,
+          audioMime: cachedProgramTranslation.audioMime,
+          audioVoice: cachedProgramTranslation.audioVoice,
+        }
+      : selectedProgram;
+  // Every hasAudio-derived bit of UI below (badge, render/download buttons,
+  // TTS-unsupported note) reflects whichever variant is currently on
+  // screen: if the original has rendered audio but the translated variant
+  // doesn't (yet), showing the translated script should offer "render
+  // audio" rather than claim audio is already available.
+  const hasAudio = (displayProgram?.audioCids?.length ?? 0) > 0;
+
+  const programTitleDisplay =
+    showTranslated && cachedProgramTranslation
+      ? cachedProgramTranslation.title
+      : liveProgramProgress && !cachedProgramTranslation
+        ? (liveProgramProgress.title ?? selectedProgram?.title ?? "")
+        : (selectedProgram?.title ?? "");
+
+  // Same length/order as selectedProgram.segments; ruby is only ever carried
+  // for the original-language display (see programTranslate.ts's module
+  // header — translated text has no ruby annotations of its own).
+  const programSegmentsDisplay: { text: string; ruby?: string }[] = (selectedProgram?.segments ?? []).map(
+    (segment, index) => {
+      if (showingCachedProgramTranslation) {
+        return { text: cachedProgramTranslation?.segmentTexts[index] ?? segment.text };
+      }
+      if (showingLiveProgramTranslation && liveProgramSegmentTexts && index < liveProgramSegmentTexts.length) {
+        return { text: liveProgramSegmentTexts[index] };
+      }
+      return { text: segment.text, ruby: segment.ruby };
+    },
+  );
 
   // Playback lives in the app-global store now (lib/playerStore) — this
   // view only reflects it, and only when the *selected* program is the one
@@ -365,6 +497,81 @@ export function ProgramView(props: {
     }
   }
 
+  // Translates the selected program's script into `lang` and caches the
+  // result locally (lib/programTranslationStore). Runs through the global AI
+  // job queue like generate/programAudio above, so it survives navigating
+  // away from this tab. `lang` is captured as a plain parameter (the caller
+  // passes the current targetLang state at click time) rather than read from
+  // component state inside the job closure — the closure must keep
+  // translating into the language the user asked for even if they flip the
+  // LanguagePicker again before the job finishes.
+  async function handleTranslateProgram(program: RadioProgram, lang: Locale) {
+    // 既に同じ番組×言語の翻訳ジョブが進行中なら、ここで新しい呼び出し経路の
+    // then/catch を重ねて付けない(= 二重の後処理を防ぐ)。キュー自体も
+    // kind+targetId+lang でdedupするが、これは早期returnで無駄なenqueue
+    // 呼び出し自体を避けるためのもの(handleRenderAudio/handleGenerateと同じ)。
+    if (findPendingJob("programTranslate", program.id, lang)) return;
+    setTranslateError(null);
+    try {
+      await enqueueJob(
+        { kind: "programTranslate", targetId: program.id, label: program.title || t("program.untitledProgram"), lang },
+        async (signal, report) => {
+          try {
+            const content = await translateProgram(program, {
+              profileId: "",
+              targetLanguage: LOCALE_LABELS[lang],
+              signal,
+              onProgress: (p) => {
+                publishTranslationProgress({
+                  kind: "program",
+                  targetId: program.id,
+                  lang,
+                  title: p.title,
+                  subtitle: null,
+                  body: JSON.stringify(p.segmentTexts),
+                  doneChunks: p.doneSegments,
+                  totalChunks: p.totalSegments,
+                });
+                if (p.totalSegments > 0) report(`${p.doneSegments}/${p.totalSegments}`);
+              },
+            });
+            // translateProgram checks the signal between segment calls, but a
+            // cancellation landing while the *final* segment call is in
+            // flight still resolves normally — catch that here so a
+            // cancelled job doesn't go on to cache its (unwanted) result.
+            // Mirrors app.tsx's handleTranslateOwnArticle.
+            if (signal.aborted) {
+              const err = new Error("Request cancelled.");
+              err.name = "AbortError";
+              throw err;
+            }
+            saveProgramTranslation({
+              programId: program.id,
+              lang,
+              title: content.title,
+              segmentTexts: content.segmentTexts,
+              translatedAt: Date.now(),
+            });
+          } finally {
+            // The job (and its onProgress emits) can outlive this view being
+            // scrolled away from — always drop the live-progress entry on
+            // settle (success, failure, or cancel) so readers fall back to
+            // programTranslationStore instead of a stale in-memory snapshot.
+            clearTranslationProgress("program", program.id, lang);
+          }
+        },
+      );
+      // Only flip the toggle if the user is still looking at this program —
+      // they may have selected a different one while the job was running.
+      if (selectedProgramIdRef.current === program.id) setShowTranslated(true);
+    } catch (err) {
+      // キャンセルはユーザー操作の結果であってエラーではないので表示しない。
+      if (selectedProgramIdRef.current === program.id && !isCancelError(err)) {
+        setTranslateError(err instanceof Error ? err.message : String(err));
+      }
+    }
+  }
+
   async function handleShareProgram(program: RadioProgram) {
     setShareState((prev) => ({ ...prev, [program.id]: "busy" }));
     setShareErrors((prev) => ({ ...prev, [program.id]: undefined }));
@@ -388,10 +595,24 @@ export function ProgramView(props: {
 
   // playerStore.playProgram() itself picks creator-rendered audio vs. live
   // TTS (based on program.audioCids) — this view just supplies the voice/
-  // rate/openaiVoice choices from its own picker UI.
+  // rate/openaiVoice choices from its own picker UI. Plays displayProgram
+  // (the translated variant while one's on screen, else the original as-is)
+  // rather than selectedProgram directly, so translated script pane and
+  // translated audio always agree.
   function handlePlay() {
-    if (!selectedProgram) return;
-    void playProgram(selectedProgram, { voice: selectedVoice, openaiVoice, rate });
+    if (!displayProgram) return;
+    // selectedVoice was picked to match the *original* program's language
+    // (see the pickDefaultVoice effect above, keyed off selectedProgram.lang).
+    // While showing a translated variant that voice is wrong for the target
+    // language, so pass voice: undefined instead — playProgram (lib/
+    // playerStore.ts) resolves that itself via pickDefaultVoice(voices,
+    // displayProgram.lang), and displayProgram.lang is set to targetLang
+    // above, so it lands on a voice for the translated language
+    // automatically. openaiVoice/rate stay as picked: OpenAI voice ids name
+    // a voice, not a language, and the rate is a playback-speed preference
+    // independent of language either way.
+    const voice = showingCachedProgramTranslation ? undefined : selectedVoice;
+    void playProgram(displayProgram, { voice, openaiVoice, rate });
   }
 
   async function handleRenderAudio(program: RadioProgram) {
@@ -431,20 +652,91 @@ export function ProgramView(props: {
     }
   }
 
-  async function handleDownloadAudio(program: RadioProgram) {
-    if (!program.audioCids || program.audioCids.length === 0 || downloadState[program.id] === "busy") return;
-    setDownloadState((prev) => ({ ...prev, [program.id]: "busy" }));
-    setDownloadErrors((prev) => ({ ...prev, [program.id]: undefined }));
+  // Renders audio for the *translated* script (lang-scoped, local-only —
+  // see programTranslationStore.ts's module header). Mirrors
+  // handleRenderAudio above but: (1) doesn't require isOwnProgram — a
+  // translated rendering is a per-viewer convenience that's never shared
+  // over P2P, so it's just as usable for a received program as for one's
+  // own; (2) state/errors are keyed by `${program.id}::${lang}` rather than
+  // program.id alone, so a translated render never clobbers (or gets
+  // clobbered by) an in-flight/completed original-language render for the
+  // same program; (3) the storage id passed to renderProgramAudio is
+  // `${program.id}.${lang}` for the same reason (distinct object keys per
+  // language); (4) the result is saved into programTranslationStore via
+  // saveProgramTranslation, never onto the program itself — upsertProgram
+  // is intentionally never called here, since a RadioProgram's audioCids
+  // ride the tc-news:program P2P wire whole-JSON, and translated audio must
+  // never leak out that way.
+  //
+  // `lang` is captured as a plain parameter at click time (like
+  // handleTranslateProgram above) rather than re-read from targetLang state
+  // inside the async closure, so flipping the LanguagePicker mid-render
+  // doesn't redirect an in-flight render to the wrong language's cache slot.
+  async function handleRenderTranslatedAudio(program: RadioProgram, lang: Locale) {
+    const tr = getProgramTranslation(program.id, lang);
+    if (!tr || !resolvedVoice) return;
+    const key = `${program.id}::${lang}`;
+    if (renderAudioState[key]) return;
+    // 既に同じ番組×言語の音声レンダリングジョブが進行中なら、ここで新しい
+    // 呼び出し経路の then/catch を重ねて付けない(= 二重の後処理を防ぐ)。
+    // findPendingJob へ lang を渡すことで、原文用ジョブ(lang省略 = ""扱い)
+    // とは別のdedupバケットになる — 互いのガードが誤って干渉しない。
+    if (findPendingJob("programAudio", program.id, lang)) return;
+    const total = tr.segmentTexts.length;
+    setRenderAudioState((prev) => ({ ...prev, [key]: { done: 0, total } }));
+    setRenderAudioErrors((prev) => ({ ...prev, [key]: undefined }));
     try {
-      await downloadProgramAudio(
-        { cids: program.audioCids, mime: program.audioMime ?? "audio/mpeg" },
-        program.title,
-        t("program.untitledProgram"),
+      const { audioCids, audioMime } = await enqueueJob(
+        {
+          kind: "programAudio",
+          targetId: program.id,
+          label: tr.title || program.title || t("program.untitledProgram"),
+          lang,
+        },
+        (signal, report) =>
+          renderProgramAudio(
+            `${program.id}.${lang}`,
+            tr.segmentTexts,
+            { ...resolvedVoice, voice: openaiVoice },
+            {
+              onProgress: (done, doneTotal) => {
+                report(`${done}/${doneTotal}`);
+                setRenderAudioState((prev) => ({ ...prev, [key]: { done, total: doneTotal } }));
+              },
+              signal,
+            },
+          ),
       );
+      // 保存直前に最新の翻訳レコードを再読みしてから上書きする — このジョブが
+      // 走っている間に(再翻訳などで)別の保存が挟まっていた場合に、その内容を
+      // 消さないため(handleTranslateProgramの再翻訳と競合した場合の保険)。
+      const latest = getProgramTranslation(program.id, lang) ?? tr;
+      saveProgramTranslation({ ...latest, audioCids, audioMime, audioVoice: openaiVoice });
     } catch (err) {
-      setDownloadErrors((prev) => ({ ...prev, [program.id]: err instanceof Error ? err.message : String(err) }));
+      // キャンセルはユーザー操作の結果であってエラーではないので表示しない。
+      if (!isCancelError(err)) {
+        setRenderAudioErrors((prev) => ({ ...prev, [key]: err instanceof Error ? err.message : String(err) }));
+      }
     } finally {
-      setDownloadState((prev) => ({ ...prev, [program.id]: undefined }));
+      setRenderAudioState((prev) => ({ ...prev, [key]: undefined }));
+    }
+  }
+
+  // Downloads whichever audio is currently displayed (translated variant's
+  // rendered audio while one's on screen, else the original's) — caller
+  // supplies the cids/mime/title/key already resolved from displayProgram
+  // downstream (see downloadKey below), so this stays agnostic of which
+  // variant it's downloading.
+  async function handleDownloadAudio(key: string, cids: string[], mime: string | undefined, title: string) {
+    if (cids.length === 0 || downloadState[key] === "busy") return;
+    setDownloadState((prev) => ({ ...prev, [key]: "busy" }));
+    setDownloadErrors((prev) => ({ ...prev, [key]: undefined }));
+    try {
+      await downloadProgramAudio({ cids, mime: mime ?? "audio/mpeg" }, title, t("program.untitledProgram"));
+    } catch (err) {
+      setDownloadErrors((prev) => ({ ...prev, [key]: err instanceof Error ? err.message : String(err) }));
+    } finally {
+      setDownloadState((prev) => ({ ...prev, [key]: undefined }));
     }
   }
 
@@ -472,14 +764,33 @@ export function ProgramView(props: {
     ),
   ).sort((a, b) => a.localeCompare(b));
 
-  const renderProgress = selectedProgram ? renderAudioState[selectedProgram.id] : undefined;
+  // 「音声を作成」ボタン・進捗・エラーが対象にするキー: 翻訳表示中は
+  // `${id}::${lang}`(翻訳版レンダリング用、原文用と衝突しないキー)、それ
+  // 以外は従来通り program.id。findPendingJob へ渡す lang も同じ使い分け —
+  // 省略時は lang==="" のジョブ(=原文用)のみにマッチするので、原文/翻訳
+  // どちらのガードも互いを誤ブロックしない(lib/jobQueue.ts の
+  // findExistingPending 参照)。
+  const renderAudioKey = selectedProgram
+    ? showingCachedProgramTranslation
+      ? `${selectedProgram.id}::${targetLang}`
+      : selectedProgram.id
+    : null;
+  const renderProgress = renderAudioKey ? renderAudioState[renderAudioKey] : undefined;
   // ローカルのrenderAudioStateに加えて、キューに残っている"programAudio"
   // ジョブの有無もOR判定に入れる — このビューを離れて戻ってきた直後は
   // renderAudioStateがリセットされているが、ジョブ自体はまだ動いているので
   // ここで拾う。
   const renderAudioJobPending = selectedProgram
-    ? findPendingJob("programAudio", selectedProgram.id) !== null
+    ? showingCachedProgramTranslation
+      ? findPendingJob("programAudio", selectedProgram.id, targetLang) !== null
+      : findPendingJob("programAudio", selectedProgram.id) !== null
     : false;
+  // ダウンロードbusy/エラーの対象キー — レンダリングと同じ使い分け。
+  const downloadKey = selectedProgram
+    ? showingCachedProgramTranslation
+      ? `${selectedProgram.id}::${targetLang}`
+      : selectedProgram.id
+    : null;
 
   return (
     <div class="program-view">
@@ -668,7 +979,7 @@ export function ProgramView(props: {
         {selectedProgram ? (
           <div class="program-player">
             <div class="program-player-header">
-              <h2 class="program-player-title">{selectedProgram.title || t("program.untitledProgram")}</h2>
+              <h2 class="program-player-title">{programTitleDisplay || t("program.untitledProgram")}</h2>
               <div class="program-player-header-actions">
                 {selectedProgram.shared ? (
                   <span class="badge badge--shared">{t("articles.sharedBadge")}</span>
@@ -678,12 +989,24 @@ export function ProgramView(props: {
                     <Volume2 size={12} /> {t("program.audioBadge")}
                   </span>
                 ) : null}
-                {isOwnProgram && engine === "openai" && !hasAudio ? (
+                {/* 「音声を作成」: 翻訳表示中はisOwnProgramを問わない(翻訳音声は
+                    ローカル専用のviewer側の利便性であってP2P共有物ではないため、
+                    受信番組でも自分の端末向けに作ってよい)。原文表示中は従来通り
+                    isOwnProgramのみ。 */}
+                {(
+                  showingCachedProgramTranslation
+                    ? engine === "openai" && !!resolvedVoice && !hasAudio
+                    : isOwnProgram && engine === "openai" && !hasAudio
+                ) ? (
                   <button
                     type="button"
                     class="btn btn-ghost"
                     disabled={renderProgress !== undefined || renderAudioJobPending}
-                    onClick={() => void handleRenderAudio(selectedProgram)}
+                    onClick={() =>
+                      showingCachedProgramTranslation
+                        ? void handleRenderTranslatedAudio(selectedProgram, targetLang)
+                        : void handleRenderAudio(selectedProgram)
+                    }
                   >
                     {renderProgress || renderAudioJobPending ? <Loader2 size={14} class="spin" /> : <Mic size={14} />}
                     {renderProgress
@@ -693,21 +1016,22 @@ export function ProgramView(props: {
                         : t("program.renderAudio")}
                   </button>
                 ) : null}
-                {hasAudio ? (
+                {hasAudio && downloadKey ? (
                   <button
                     type="button"
                     class="btn btn-ghost"
-                    disabled={downloadState[selectedProgram.id] === "busy"}
-                    onClick={() => void handleDownloadAudio(selectedProgram)}
+                    disabled={downloadState[downloadKey] === "busy"}
+                    onClick={() =>
+                      void handleDownloadAudio(
+                        downloadKey,
+                        displayProgram?.audioCids ?? [],
+                        displayProgram?.audioMime,
+                        displayProgram?.title ?? selectedProgram.title,
+                      )
+                    }
                   >
-                    {downloadState[selectedProgram.id] === "busy" ? (
-                      <Loader2 size={14} class="spin" />
-                    ) : (
-                      <Download size={14} />
-                    )}
-                    {downloadState[selectedProgram.id] === "busy"
-                      ? t("program.downloadPreparing")
-                      : t("program.downloadAudio")}
+                    {downloadState[downloadKey] === "busy" ? <Loader2 size={14} class="spin" /> : <Download size={14} />}
+                    {downloadState[downloadKey] === "busy" ? t("program.downloadPreparing") : t("program.downloadAudio")}
                   </button>
                 ) : null}
                 {isOwnProgram ? (
@@ -739,13 +1063,18 @@ export function ProgramView(props: {
             {isOwnProgram && shareErrors[selectedProgram.id] ? (
               <p class="program-generate-error">{shareErrors[selectedProgram.id]}</p>
             ) : null}
-            {isOwnProgram && renderAudioErrors[selectedProgram.id] ? (
-              <p class="program-generate-error">{renderAudioErrors[selectedProgram.id]}</p>
+            {renderAudioKey && renderAudioErrors[renderAudioKey] ? (
+              <p class="program-generate-error">{renderAudioErrors[renderAudioKey]}</p>
             ) : null}
-            {downloadErrors[selectedProgram.id] ? (
-              <p class="program-generate-error">{downloadErrors[selectedProgram.id]}</p>
+            {downloadKey && downloadErrors[downloadKey] ? (
+              <p class="program-generate-error">{downloadErrors[downloadKey]}</p>
             ) : null}
-            {isOwnProgram && engine === "openai" && !selectedProgram.shared && !hasAudio ? (
+            {translateError ? <p class="program-generate-error">{translateError}</p> : null}
+            {/* "render before sharing" nudge only makes sense for the
+                original script — translated audio is local-only and never
+                rides the share wire, so it never applies while a translated
+                variant is on screen. */}
+            {!showingCachedProgramTranslation && isOwnProgram && engine === "openai" && !selectedProgram.shared && !hasAudio ? (
               <p class="program-section-hint">{t("program.renderAudioHint")}</p>
             ) : null}
 
@@ -845,6 +1174,58 @@ export function ProgramView(props: {
               </>
             ) : null}
 
+            <div class="program-script-toolbar">
+              <LanguagePicker
+                value={targetLang}
+                onChange={(lang) => {
+                  setTargetLang(lang);
+                  // Switching target language jumps straight to that
+                  // language's cached translation if one exists; otherwise
+                  // falls back to the original — mirrors
+                  // ArticleReaderModal's LanguagePicker onChange.
+                  setShowTranslated(getProgramTranslation(selectedProgram.id, lang) !== null);
+                }}
+                disabled={translateJobPending}
+              />
+              {programNeedsTranslation && !cachedProgramTranslation ? (
+                <button
+                  type="button"
+                  class="btn btn-ghost"
+                  disabled={translateJobPending}
+                  onClick={() => void handleTranslateProgram(selectedProgram, targetLang)}
+                >
+                  <Languages size={14} />
+                  {translateJobPending ? t("translate.translating") : t("translate.translate")}
+                </button>
+              ) : null}
+              {showingLiveProgramTranslation ? (
+                <span class="badge">
+                  {liveProgramProgress && liveProgramProgress.totalChunks > 0
+                    ? t("translate.translatingProgress", {
+                        done: String(liveProgramProgress.doneChunks),
+                        total: String(liveProgramProgress.totalChunks),
+                      })
+                    : t("translate.translating")}
+                </span>
+              ) : null}
+              {cachedProgramTranslation ? (
+                <button type="button" class="btn btn-ghost" onClick={() => setShowTranslated((v) => !v)}>
+                  <Languages size={14} />
+                  {showTranslated ? t("translate.showOriginal") : t("translate.showTranslated")}
+                </button>
+              ) : null}
+              {showingCachedProgramTranslation ? (
+                <span class="badge">{t("translate.translatedBadge", { lang: LOCALE_LABELS[targetLang] })}</span>
+              ) : null}
+            </div>
+            {/* Only true while a translation is still streaming: once cached
+                (showingCachedProgramTranslation), displayProgram synthesizes
+                translated audio/live-TTS-in-target-language, so the note
+                would be wrong there — see displayProgram's doc comment. */}
+            {showingLiveProgramTranslation ? (
+              <p class="program-section-hint">{t("translate.programAudioOriginalNote")}</p>
+            ) : null}
+
             <ul class="program-script">
               {selectedProgram.segments.map((segment, index) => (
                 <li
@@ -854,7 +1235,10 @@ export function ProgramView(props: {
                   }}
                   class={`program-segment${playState !== "idle" && index === currentIndex ? " program-segment--active" : ""}`}
                 >
-                  <SegmentText text={segment.text} ruby={segment.ruby} />
+                  <SegmentText
+                    text={programSegmentsDisplay[index]?.text ?? segment.text}
+                    ruby={programSegmentsDisplay[index]?.ruby}
+                  />
                 </li>
               ))}
             </ul>

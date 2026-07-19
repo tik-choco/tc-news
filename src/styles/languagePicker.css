@@ -1,0 +1,36 @@
+/* Compact language selector used in reader toolbars
+ * (components/LanguagePicker.tsx). Ghost-button look to sit alongside
+ * .btn-ghost / .icon-btn toolbar neighbors. */
+
+.lang-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.lang-picker:hover {
+  color: var(--text);
+  border-color: var(--primary);
+}
+
+.lang-picker-select {
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  outline: none;
+  max-width: 9em;
+}
+
+.lang-picker-select:disabled {
+  cursor: default;
+  opacity: 0.6;
+}

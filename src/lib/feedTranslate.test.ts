@@ -1,6 +1,8 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { splitHtmlIntoChunks, translateFeedContent } from "./feedTranslate";
+import { splitHtmlIntoChunks, translateFeedContent, type FeedTranslationProgressUpdate } from "./feedTranslate";
+import { getPartialFeedTranslation } from "./partialFeedTranslationStore";
+import { resetKvStoreForTests } from "./kvStore";
 
 // requestChatCompletion is the only real network-ish dependency; mock it so
 // tests are deterministic and assert call ordering/count (sequential chunk
@@ -19,6 +21,12 @@ vi.mock("dompurify", () => ({
 
 beforeEach(() => {
   requestChatCompletion.mockReset();
+  // partialFeedTranslationStore persists through kvStore, which in fallback
+  // mode (no initKvStore() call here) behaves like localStorage plus an
+  // in-memory mirror — both need clearing between tests, same pattern as
+  // reactionStore.test.ts.
+  localStorage.clear();
+  resetKvStoreForTests();
 });
 
 describe("splitHtmlIntoChunks", () => {
@@ -262,5 +270,151 @@ describe("translateFeedContent", () => {
       expect((err as Error).message).toBe("Request cancelled.");
       expect((err as Error).message).not.toMatch(/translateFailed|errors\./);
     }
+  });
+});
+
+describe("translateFeedContent — streaming progress (onProgress)", () => {
+  it("emits onProgress after the title/summary step and after every completed chunk, html growing monotonically", async () => {
+    const bigP = (n: number) => `<p>${"y".repeat(n)}</p>`;
+    // Two elements, each big enough that they land in separate 12_000-char chunks (same shape as the sequential-chunk test above).
+    const html = bigP(11_000) + bigP(11_000);
+
+    requestChatCompletion
+      .mockResolvedValueOnce(JSON.stringify({ title: "T", summary: "S" }))
+      .mockResolvedValueOnce("<p>chunk-1</p>")
+      .mockResolvedValueOnce("<p>chunk-2</p>");
+
+    const updates: FeedTranslationProgressUpdate[] = [];
+    const result = await translateFeedContent(
+      { title: "Original", summary: "Orig", html },
+      { profileId: "", targetLanguage: "English", onProgress: (p) => updates.push(p) },
+    );
+
+    // Post-title/summary emit, then one emit per completed chunk (2) — no
+    // in-flight delta emits are expected here since the requestChatCompletion
+    // mock never invokes onDelta itself.
+    expect(updates).toHaveLength(3);
+    expect(updates[0]).toEqual({ title: "T", summary: "S", html: "", doneChunks: 0, totalChunks: 2 });
+    expect(updates[1]).toMatchObject({ doneChunks: 1, totalChunks: 2 });
+    expect(updates[2]).toMatchObject({ doneChunks: 2, totalChunks: 2 });
+    // html must never shrink across the stream, and the final emit must
+    // match the function's own return value.
+    for (let i = 1; i < updates.length; i++) {
+      expect(updates[i].html.length).toBeGreaterThanOrEqual(updates[i - 1].html.length);
+    }
+    expect(updates[updates.length - 1].html).toBe(result.html);
+  });
+
+  it("emits a single html:\"\" update when input.html is null", async () => {
+    requestChatCompletion.mockResolvedValueOnce(JSON.stringify({ title: "T", summary: "S" }));
+
+    const updates: FeedTranslationProgressUpdate[] = [];
+    await translateFeedContent(
+      { title: "Original", summary: "Orig", html: null },
+      { profileId: "", targetLanguage: "English", onProgress: (p) => updates.push(p) },
+    );
+
+    expect(updates).toEqual([{ title: "T", summary: "S", html: "", doneChunks: 0, totalChunks: 0 }]);
+  });
+});
+
+describe("translateFeedContent — partial save & resume (itemId + lang)", () => {
+  it("leaves a partial translation in the store when aborted mid-translation", async () => {
+    const controller = new AbortController();
+    const bigP = (n: number) => `<p>${"y".repeat(n)}</p>`;
+    const html = bigP(11_000) + bigP(11_000);
+
+    requestChatCompletion
+      .mockResolvedValueOnce(JSON.stringify({ title: "T", summary: "S" }))
+      .mockImplementationOnce(async () => {
+        // Simulate the caller cancelling once the first chunk call resolves
+        // (same trick as the existing mid-translation abort test above).
+        controller.abort();
+        return "<p>chunk-1</p>";
+      });
+
+    await expect(
+      translateFeedContent(
+        { title: "Original", summary: "Orig", html },
+        { profileId: "", targetLanguage: "English", itemId: "item-1", lang: "en", signal: controller.signal },
+      ),
+    ).rejects.toMatchObject({ name: "AbortError" });
+
+    const partial = getPartialFeedTranslation("item-1", "en");
+    expect(partial).not.toBeNull();
+    expect(partial?.title).toBe("T");
+    expect(partial?.summary).toBe("S");
+    expect(partial?.chunks).toEqual(["<p>chunk-1</p>"]);
+    expect(partial?.totalChunks).toBe(2);
+    expect(partial?.truncated).toBe(false);
+  });
+
+  it("resumes from a matching partial: skips the title/summary call and already-completed chunk calls", async () => {
+    const bigP = (n: number) => `<p>${"y".repeat(n)}</p>`;
+    const html = bigP(11_000) + bigP(11_000);
+    const input = { title: "Original", summary: "Orig", html };
+    const opts = { profileId: "", targetLanguage: "English", itemId: "item-2", lang: "en" };
+
+    // First attempt: title/summary and chunk 1 succeed, chunk 2 fails —
+    // leaves a partial covering exactly the first chunk.
+    requestChatCompletion
+      .mockResolvedValueOnce(JSON.stringify({ title: "T", summary: "S" }))
+      .mockResolvedValueOnce("<p>chunk-1</p>")
+      .mockRejectedValueOnce(new Error("boom"));
+
+    await expect(translateFeedContent(input, opts)).rejects.toThrow(/boom/);
+    expect(requestChatCompletion).toHaveBeenCalledTimes(3);
+
+    // Second attempt with the identical input/keying: only the still-missing
+    // chunk should reach the LLM.
+    requestChatCompletion.mockReset();
+    requestChatCompletion.mockResolvedValueOnce("<p>chunk-2</p>");
+
+    const result = await translateFeedContent(input, opts);
+
+    expect(requestChatCompletion).toHaveBeenCalledTimes(1);
+    expect(result.title).toBe("T");
+    expect(result.summary).toBe("S");
+    expect(result.html).toBe("<p>chunk-1</p>\n<p>chunk-2</p>");
+    expect(result.truncated).toBe(false);
+    // A successfully completed job clears its own partial (nothing left to resume into).
+    expect(getPartialFeedTranslation("item-2", "en")).toBeNull();
+  });
+
+  it("discards a stale partial and fully retranslates when the source content changed (sourceSig mismatch)", async () => {
+    const opts = { profileId: "", targetLanguage: "English", itemId: "item-3", lang: "en" };
+    const bigP = (n: number) => `<p>${"y".repeat(n)}</p>`;
+    const htmlA = bigP(11_000) + bigP(11_000);
+
+    // Leave a partial behind for item-3 via an aborted job on content "A".
+    const controller = new AbortController();
+    requestChatCompletion
+      .mockResolvedValueOnce(JSON.stringify({ title: "TA", summary: "SA" }))
+      .mockImplementationOnce(async () => {
+        controller.abort();
+        return "<p>chunk-a1</p>";
+      });
+    await expect(
+      translateFeedContent({ title: "A", summary: "Asum", html: htmlA }, { ...opts, signal: controller.signal }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(getPartialFeedTranslation("item-3", "en")?.chunks).toEqual(["<p>chunk-a1</p>"]);
+
+    // Different title/summary/html -> different sourceSig; the stale partial
+    // above must be ignored (and discarded) rather than resumed into.
+    requestChatCompletion
+      .mockReset()
+      .mockResolvedValueOnce(JSON.stringify({ title: "TB", summary: "SB" }))
+      .mockResolvedValueOnce("<p>chunk-b</p>");
+
+    const result = await translateFeedContent({ title: "B", summary: "Bsum", html: "<p>world</p>" }, opts);
+
+    // Full retranslate: title/summary call plus the one small chunk's call
+    // both happen — nothing skipped despite item-3 already having a partial
+    // on file, because it doesn't match this content's sourceSig.
+    expect(requestChatCompletion).toHaveBeenCalledTimes(2);
+    expect(result.title).toBe("TB");
+    expect(result.summary).toBe("SB");
+    expect(result.html).toBe("<p>chunk-b</p>");
+    expect(getPartialFeedTranslation("item-3", "en")).toBeNull();
   });
 });

@@ -27,7 +27,15 @@ const mist = vi.hoisted(() => ({
 }));
 vi.mock("./mistClient", () => mist);
 
-import { downloadProgramAudio, programAudioFileName, type ProgramAudioSource } from "./programAudio";
+const wavToMp3Mock = vi.hoisted(() => vi.fn<(bytes: Uint8Array) => Uint8Array>());
+vi.mock("./wavToMp3", () => ({ wavToMp3: wavToMp3Mock }));
+
+const openaiTts = vi.hoisted(() => ({
+  synthesizeSpeech: vi.fn<(text: string, tts: unknown) => Promise<Blob>>(),
+}));
+vi.mock("./openaiTts", () => openaiTts);
+
+import { downloadProgramAudio, programAudioFileName, renderProgramAudio, type ProgramAudioSource } from "./programAudio";
 
 /** Leaves a real <a> element in place (document.body.appendChild needs an
  * actual Node under happy-dom) but stubs its click() so downloadProgramAudio
@@ -58,6 +66,9 @@ beforeEach(() => {
   audioMerge.mergeMp3Segments.mockReset();
   audioMerge.mergeWavSegments.mockReset();
   mist.storage_get.mockReset();
+  mist.storage_add.mockReset();
+  wavToMp3Mock.mockReset();
+  openaiTts.synthesizeSpeech.mockReset();
 });
 
 describe("programAudioFileName", () => {
@@ -120,11 +131,14 @@ describe("downloadProgramAudio", () => {
     expect(box.anchor?.click).toHaveBeenCalledTimes(1);
   });
 
-  it("merges wav via mergeWavSegments and downloads with a .wav name", async () => {
+  it("merges wav via mergeWavSegments, converts to mp3, and downloads with a .mp3 name", async () => {
     const seg0 = new Uint8Array([1, 2, 3]);
     mist.storage_get.mockResolvedValue(seg0);
     audioMerge.sniffAudioContainer.mockReturnValue("wav");
-    audioMerge.mergeWavSegments.mockReturnValue(new Uint8Array([9]));
+    const merged = new Uint8Array([9]);
+    audioMerge.mergeWavSegments.mockReturnValue(merged);
+    const mp3Bytes = new Uint8Array([7, 7]);
+    wavToMp3Mock.mockReturnValue(mp3Bytes);
     const box = stubAnchor();
 
     // Legacy program: stored mime says mp3, but the real bytes are wav —
@@ -133,10 +147,41 @@ describe("downloadProgramAudio", () => {
 
     expect(audioMerge.mergeWavSegments).toHaveBeenCalledWith([seg0]);
     expect(audioMerge.mergeMp3Segments).not.toHaveBeenCalled();
+    expect(wavToMp3Mock).toHaveBeenCalledWith(merged);
+    expect(box.anchor?.download).toBe("My Program.mp3");
+  });
+
+  it("keeps the .wav name and audio/wav mime when wavToMp3 throws after a successful wav merge", async () => {
+    const seg0 = new Uint8Array([1, 2, 3]);
+    mist.storage_get.mockResolvedValue(seg0);
+    audioMerge.sniffAudioContainer.mockReturnValue("wav");
+    audioMerge.mergeWavSegments.mockReturnValue(new Uint8Array([9]));
+    wavToMp3Mock.mockImplementation(() => {
+      throw new Error("unsupported wav format");
+    });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const box = stubAnchor();
+
+    await downloadProgramAudio(source(["a"], "audio/mpeg"), "My Program", "fallback");
+
+    expect(wavToMp3Mock).toHaveBeenCalled();
+    expect(warn).toHaveBeenCalled();
     expect(box.anchor?.download).toBe("My Program.wav");
   });
 
-  it("falls back to naive concatenation and warns when mergeWavSegments throws", async () => {
+  it("does not call wavToMp3 for mp3 segments", async () => {
+    const seg0 = new Uint8Array([1, 2, 3]);
+    mist.storage_get.mockResolvedValue(seg0);
+    audioMerge.sniffAudioContainer.mockReturnValue("mp3");
+    audioMerge.mergeMp3Segments.mockReturnValue(new Uint8Array([9]));
+    stubAnchor();
+
+    await downloadProgramAudio(source(["a"]), "My Program", "fallback");
+
+    expect(wavToMp3Mock).not.toHaveBeenCalled();
+  });
+
+  it("falls back to naive concatenation, warns, and skips wavToMp3 when mergeWavSegments throws", async () => {
     const seg0 = new Uint8Array([1, 2]);
     const seg1 = new Uint8Array([3, 4]);
     mist.storage_get.mockImplementation(async (cid: string) => (cid === "a" ? seg0 : seg1));
@@ -145,11 +190,15 @@ describe("downloadProgramAudio", () => {
       throw new Error("fmt mismatch");
     });
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    stubAnchor();
+    const box = stubAnchor();
 
     await downloadProgramAudio(source(["a", "b"]), "My Program", "fallback");
 
     expect(warn).toHaveBeenCalled();
+    // A broken/partial wav should never be handed to wavToMp3 — that would
+    // silently produce a plausible-looking but wrong mp3.
+    expect(wavToMp3Mock).not.toHaveBeenCalled();
+    expect(box.anchor?.download).toBe("My Program.wav");
   });
 
   it("uses naive concatenation directly for an unknown container, with a .mp3 fallback name", async () => {
@@ -173,5 +222,77 @@ describe("downloadProgramAudio", () => {
     expect(audioMerge.sniffAudioContainer).not.toHaveBeenCalled();
     expect(audioMerge.mergeMp3Segments).not.toHaveBeenCalled();
     expect(audioMerge.mergeWavSegments).not.toHaveBeenCalled();
+  });
+});
+
+describe("renderProgramAudio", () => {
+  // synthesizeSpeech's returned Blob round-trips through blob.arrayBuffer()
+  // inside renderProgramAudio, which yields a brand-new Uint8Array with the
+  // same *content* but a different identity — so mocks below must branch by
+  // value, not by reference.
+  function blobFrom(bytes: Uint8Array): Blob {
+    // Re-wrap for BlobPart's stricter (plain-ArrayBuffer-backed) Uint8Array
+    // requirement — same idiom as fetchProgramAudioBlobs.
+    return new Blob([new Uint8Array(bytes)]);
+  }
+  function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
+    return a.length === b.length && a.every((v, i) => v === b[i]);
+  }
+
+  it("converts wav segments to mp3 before storing, and reports audio/mpeg", async () => {
+    const seg0Wav = new Uint8Array([1, 2, 3]);
+    const seg1Wav = new Uint8Array([4, 5, 6]);
+    openaiTts.synthesizeSpeech.mockImplementation(async (text: string) =>
+      blobFrom(text === "seg0" ? seg0Wav : seg1Wav),
+    );
+    audioMerge.sniffAudioContainer.mockReturnValue("wav");
+    const seg0Mp3 = new Uint8Array([9, 9]);
+    const seg1Mp3 = new Uint8Array([8, 8]);
+    wavToMp3Mock.mockImplementation((bytes: Uint8Array) => (sameBytes(bytes, seg0Wav) ? seg0Mp3 : seg1Mp3));
+    mist.storage_add.mockResolvedValue("cid");
+
+    const result = await renderProgramAudio("prog1", ["seg0", "seg1"], {} as never);
+
+    expect(wavToMp3Mock).toHaveBeenCalledTimes(2);
+    expect(mist.storage_add).toHaveBeenNthCalledWith(1, "prog1.seg0.mp3", seg0Mp3);
+    expect(mist.storage_add).toHaveBeenNthCalledWith(2, "prog1.seg1.mp3", seg1Mp3);
+    expect(result.audioMime).toBe("audio/mpeg");
+  });
+
+  it("falls back to wav for all segments, without retrying wavToMp3, when segment 0's conversion throws", async () => {
+    const seg0Wav = new Uint8Array([1, 2, 3]);
+    const seg1Wav = new Uint8Array([4, 5, 6]);
+    openaiTts.synthesizeSpeech.mockImplementation(async (text: string) =>
+      blobFrom(text === "seg0" ? seg0Wav : seg1Wav),
+    );
+    audioMerge.sniffAudioContainer.mockReturnValue("wav");
+    wavToMp3Mock.mockImplementation(() => {
+      throw new Error("unsupported wav format");
+    });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    mist.storage_add.mockResolvedValue("cid");
+
+    const result = await renderProgramAudio("prog1", ["seg0", "seg1"], {} as never);
+
+    expect(warn).toHaveBeenCalled();
+    // Only segment 0 pays for the (doomed) conversion attempt; later
+    // segments go straight to wav storage.
+    expect(wavToMp3Mock).toHaveBeenCalledTimes(1);
+    expect(mist.storage_add).toHaveBeenNthCalledWith(1, "prog1.seg0.wav", seg0Wav);
+    expect(mist.storage_add).toHaveBeenNthCalledWith(2, "prog1.seg1.wav", seg1Wav);
+    expect(result.audioMime).toBe("audio/wav");
+  });
+
+  it("does not call wavToMp3 for mp3 segments", async () => {
+    const seg0Mp3 = new Uint8Array([1, 2, 3]);
+    openaiTts.synthesizeSpeech.mockResolvedValue(blobFrom(seg0Mp3));
+    audioMerge.sniffAudioContainer.mockReturnValue("mp3");
+    mist.storage_add.mockResolvedValue("cid");
+
+    const result = await renderProgramAudio("prog1", ["seg0"], {} as never);
+
+    expect(wavToMp3Mock).not.toHaveBeenCalled();
+    expect(mist.storage_add).toHaveBeenCalledWith("prog1.seg0.mp3", seg0Mp3);
+    expect(result.audioMime).toBe("audio/mpeg");
   });
 });
