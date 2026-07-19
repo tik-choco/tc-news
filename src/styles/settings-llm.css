@@ -1,0 +1,408 @@
+/* ============================================================
+   AI接続 / AI Network / タスク タブの共通UI。
+   Ported from tc-translate's settings-llm.css + network-status.css
+   (tc-docs/drafts/llm-settings-common-v1.md §3) — token-mapped to
+   tc-news's palette (--surface/--surface-2/--surface-3, --border,
+   --text/--text-muted/--text-subtle, --primary, --radius-*,
+   --shadow-*, --space-*, --dur-fast/--ease). No new colors
+   introduced; consumed by views/SettingsView.tsx.
+   ============================================================ */
+
+/* 接続先（Provider）とモデル（Preset）は互いに独立したグリッドカード一覧。
+   階層関係にはしない。見出し＋グリッドのみで、2セクションを区別するため
+   だけにカードの背景色を分ける。 */
+.server-list-header {
+  margin-bottom: var(--space-2);
+}
+
+.server-list-header label {
+  margin-bottom: 0;
+  color: var(--text-subtle);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.settings-flat-section {
+  margin-bottom: var(--space-4);
+}
+
+.model-row-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.model-row {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 10px 26px 10px 10px;
+  border-radius: var(--radius-s);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+  transition: background var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+
+.model-row:hover {
+  background: var(--surface-2);
+  box-shadow: var(--shadow-2);
+  transform: translateY(-1px);
+}
+
+.settings-flat-section-connection .model-row {
+  background: var(--primary-soft);
+}
+
+.settings-flat-section-models .model-row {
+  background: var(--surface-3);
+}
+
+.model-row-main {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  min-width: 0;
+  background: none;
+  border: none;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+}
+
+.model-row-label {
+  max-width: 100%;
+  font-size: 0.82rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.model-row-model {
+  max-width: 100%;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* モデル行に添える接続先名。ネストではなく単なるラベルとして小さく併記する。 */
+.model-row-provider {
+  max-width: 100%;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-style: italic;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.model-row-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.task-badge {
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 0.62rem;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+}
+
+/* カード右上に置く×削除。 */
+.model-row-remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  color: var(--text-muted);
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+.model-row-remove:hover,
+.model-row-remove:focus-visible {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.model-row-remove:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.model-row-remove:disabled:hover {
+  color: var(--text-muted);
+  background: none;
+}
+
+/* 編集/追加状態のカードはグリッド上の自分の位置のまま全幅に展開する。 */
+.model-row.model-row-editing {
+  grid-column: 1 / -1;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  padding: 10px;
+  box-shadow: none;
+  transform: none;
+}
+
+.model-row-edit-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.model-row-edit-fields input,
+.model-row-edit-fields select {
+  width: 100%;
+}
+
+.connection-form-model-field {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.connection-form-model-field > .model-field {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.model-row-add-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: 10px;
+}
+
+.connection-form-warning {
+  font-size: 0.74rem;
+  font-style: italic;
+  color: var(--danger-text);
+  margin: 0;
+}
+
+/* グリッド末尾の「追加」タイル。破線枠でカードと区別する。 */
+.grid-add-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 64px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-s);
+  background: none;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  cursor: pointer;
+  transition: all var(--dur-fast) var(--ease);
+}
+
+.grid-add-tile:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.grid-add-tile:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.connection-form-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: var(--radius-s);
+  background: var(--border);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: all var(--dur-fast) var(--ease);
+  flex: 1 1 auto;
+  white-space: nowrap;
+}
+
+.connection-form-btn:hover {
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.connection-form-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.connection-form-btn-primary {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--on-primary);
+}
+
+.connection-form-btn-primary:hover {
+  background: var(--primary-hover);
+  color: var(--on-primary);
+}
+
+/* --- タスク行(既定/編集部:計画/編集部:執筆/読み上げ) ------------------------ */
+
+.task-model-item {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.task-model-item:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.task-model-item > span {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  min-width: 0;
+  padding-top: 8px;
+}
+
+/* タスク行ラベルのhoverツールチップ。data-tip属性の説明文をラベル直下に表示する。 */
+.task-model-item > span[data-tip] {
+  position: relative;
+  cursor: help;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+
+.task-model-item > span[data-tip]:hover::after,
+.task-model-item > span[data-tip]:focus-visible::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: 0;
+  top: calc(100% + 4px);
+  z-index: 10;
+  width: max-content;
+  max-width: 240px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--surface-3);
+  color: var(--text);
+  font-size: 0.7rem;
+  line-height: 1.5;
+  box-shadow: var(--shadow-2);
+}
+
+.task-model-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.task-model-field {
+  display: block;
+  min-width: 0;
+}
+
+.task-model-field select {
+  width: 100%;
+  min-width: 0;
+}
+
+/* --- AI Networkタブのロールカード(consumer/provider) ------------------------ */
+
+.settings-role-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.settings-role-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-l);
+  background: var(--surface);
+}
+
+.settings-role-head {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-2);
+  cursor: pointer;
+}
+
+.settings-role-head input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.settings-role-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.settings-role-title svg {
+  color: var(--primary);
+  flex: 0 0 auto;
+}
+
+.settings-role-desc {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
+
+.settings-role-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: 4px;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border);
+}

@@ -23,8 +23,10 @@ import { safeSetItem } from "./safeStorage";
 
 const SETTINGS_KEY = "tc-news:provider-settings";
 
-/** reasoning_effort の選択肢。空文字はパラメータを送らない選択を表す。 */
-export const REASONING_EFFORT_OPTIONS: string[] = ["none", "low", "medium", "high"];
+/** reasoning_effort の選択肢。共通化ガイド(tc-docs/drafts/llm-settings-common-v1.md §3.2)
+ * の5値固定。"none" は「送らない」ではなく明示的にreasoning_effort="none"を送る値 —
+ * 空文字(未設定)ではないことに注意(lib/llm.tsのapiConfig参照)。 */
+export const REASONING_EFFORT_OPTIONS: string[] = ["none", "minimal", "low", "medium", "high"];
 
 /** 新規プリセット作成時の既定 reasoning_effort — 思考なしで応答を速くするため "none"。 */
 export const DEFAULT_REASONING_EFFORT = "none";

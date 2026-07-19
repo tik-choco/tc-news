@@ -1,5 +1,8 @@
-// SettingsView strings: 全般 (app-level prefs) tab, language picker, and the
-// LLM tab's shared-config (providers/presets, see lib/llmConfig.ts) UI.
+// SettingsView strings: 全般 (app-level prefs) / AI接続 / AI Network / タスク
+// の4タブ構成 — 共通化ガイド(tc-docs/drafts/llm-settings-common-v1.md)の
+// UI仕様(3タブ+ツールチップ方式)に合わせている。常時表示のヒント段落は
+// タブ先頭の1文だけに絞り、行ごとの説明はラベルのhoverツールチップ
+// (data-tip、キー名は taskTip*)に持たせる。
 //
 // Pattern for every catalog file: author `ja` (the source), then `en` typed as
 // `typeof ja` so TypeScript flags any key present in one but missing in the
@@ -10,10 +13,13 @@ const ja = {
   tabsAriaLabel: "設定タブ",
   switchToDark: "ダークモードに切替",
   switchToLight: "ライトモードに切替",
+
   tabGeneral: "全般",
-  tabLlm: "LLM",
+  tabConnection: "AI接続",
   tabNetwork: "AI Network",
-  tabTts: "音声",
+  tabTasks: "タスク",
+
+  // ----- 全般タブ -----------------------------------------------------------
   language: "言語",
   displayName: "表示名",
   roomId: "共有ルームID",
@@ -30,25 +36,31 @@ const ja = {
   showMediaPreviews: "サムネイル・リンクプレビューを表示",
   showMediaPreviewsHint:
     "フィードや出典リンクのページからOGP情報(画像・動画)を自動取得して表示します。取得にCORSプロキシを使うことがあります。",
-  llmHint:
-    "記事生成に使う接続(プロバイダー)とモデル設定(プリセット)です。プロバイダー・プリセットは同一オリジンの他のtik-chocoアプリとも共有されます。",
-  providersHeading: "プロバイダー",
-  providersHint: "接続先(Base URL・APIキー)です。どこか1つのアプリで設定すれば、他のtik-chocoアプリでも同じ接続を選べます。",
-  addProvider: "追加",
-  newProviderLabel: "新しいプロバイダー",
-  providerNamePlaceholder: "プロバイダー名",
-  deleteProvider: "削除",
-  deleteProviderAria: "プロバイダーを削除",
-  deleteProviderInUse: "プリセットまたはTTSから参照されているため削除できません",
-  presetsHeading: "モデルプリセット",
-  presetsHint: "プロバイダーを指定して、モデル名・temperature・reasoning_effortを名前付きで保存します。",
-  noProvidersHint: "先にプロバイダーを追加してください。",
-  addPreset: "追加",
-  newPresetLabel: "新しいプリセット",
-  presetNamePlaceholder: "プリセット名",
-  presetProviderLabel: "プロバイダー",
-  deletePreset: "削除",
-  deletePresetAria: "プリセットを削除",
+
+  // ----- AI接続タブ(providers/presets、tc-shared-llm-config-v1) -----------
+  connectionHint:
+    "記事生成・翻訳・番組読み上げに使う接続先とモデルです。同一オリジンの他のtik-chocoアプリとも共有されます。",
+  connectionsHeading: "接続先",
+  addConnectionTile: "接続先を追加",
+  modelsHeading: "モデル",
+  addModelTile: "モデルを追加",
+  addModelNeedConnection: "先に接続先を追加してください",
+  labelPlaceholder: "名前",
+  selectConnectionPlaceholder: "接続先を選択",
+  selectModelPlaceholder: "モデルを選択",
+  modelSelectConnectionFirst: "先に接続先を選択してください",
+  modelNamePlaceholder: "モデル名を入力",
+  cancel: "キャンセル",
+  add: "追加",
+  deleteConnectionTitle: "接続先を削除",
+  deleteConnectionAria: "接続先を削除",
+  deleteConnectionInUse: "モデルまたは読み上げから参照されているため削除できません",
+  deletePresetTitle: "モデルを削除",
+  deletePresetAria: "モデルを削除",
+  presetBadgeDefault: "既定",
+  presetBadgeOrchestrator: "編集部:計画",
+  presetBadgeWorker: "編集部:執筆",
+  presetBadgeTts: "読み上げ",
   baseUrl: "Base URL",
   apiKey: "APIキー",
   model: "モデル",
@@ -61,43 +73,44 @@ const ja = {
   modelManualEntry: "手入力",
   temperature: "Temperature",
   reasoningEffort: "推論エフォート(reasoning_effort)",
-  reasoningEffortNone: "送信しない",
-  defaultPreset: "既定のプリセット",
   defaultPresetUnset: "未設定",
-  defaultBadge: "既定",
-  orchestratorPreset: "Orchestratorプリセット(編集部生成)",
-  orchestratorPresetHint: "アイテム群を記事に振り分ける計画役。強めのモデルを推奨。",
-  workerPreset: "Workerプリセット(編集部生成)",
-  workerPresetHint: "計画された記事を並列で執筆する役。軽めのモデルでも十分です。",
-  roleFollowDefault: "既定のプリセットに従う",
-  networkHeading: "AI Network",
-  networkHint: "LLM呼び出しをmistlibルーム上の提供ピア(tc-translateやmistlなど)へ流します。接続中はすべての生成・翻訳がAI Network経由になります。",
-  networkConsumerEnabled: "AI NetworkのLLMを利用する",
+  sharedConfigCorruptedWarning:
+    "共有LLM設定(tc-shared-llm-config-v1)のレコードが壊れているため読み込めません。ここでの編集内容は保存されません。",
+  saveFailedWarning: "設定の保存に失敗しました。ブラウザのストレージ容量が不足している可能性があります。",
+
+  // ----- AI Networkタブ ------------------------------------------------------
+  networkTabHint:
+    "LLM呼び出しをmistlibルーム上の提供ピア(tc-translateやmistlなど)と共有します。ルームIDは同一オリジンの他のtik-chocoアプリとも共有されます。",
   networkRoomId: "AI NetworkルームID",
-  networkRoomIdHint: "同一オリジンの他のtik-chocoアプリとも共有されるルームIDです。",
+  networkRoomIdPlaceholder: "tc-llm",
+  networkConsumerTitle: "AI NetworkのLLMを利用する",
+  networkConsumerDesc: "接続中はすべての生成・翻訳がAI Network経由になります。",
   networkStatusIdle: "未接続",
   networkStatusJoining: "ルームに参加中...",
   networkStatusSearching: "プロバイダーを探しています...",
   networkStatusConnected: "接続済み(モデル: {models})",
   networkStatusError: "エラー: {detail}",
-  networkProviderEnabled: "自分のLLMをAI Networkへ提供する",
-  networkProviderHint:
-    "既定のプリセットの接続先を使って、ルーム内の他のピア(コンシューマー)からのLLMリクエストに応答します。設定画面を閉じても提供は継続します。",
+  networkProviderTitle: "自分のLLMをAI Networkへ提供する",
+  networkProviderDesc:
+    "既定のプリセットの接続先を使って、ルーム内の他のピアからのLLMリクエストに応答します。設定画面を閉じても提供は継続します。",
   networkProviderNotConfigured: "既定のプリセットに接続先とモデルを設定すると提供を開始できます。",
-  ttsHeading: "TTS(読み上げ)",
-  ttsHint:
-    "番組の読み上げにOpenAI互換の音声合成API(/audio/speech)を使います。無効・未設定のときはブラウザ内蔵のTTSを使います。",
-  ttsEnabled: "OpenAI互換TTSを使う",
-  ttsProvider: "TTSプロバイダー",
-  ttsProviderFollowDefault: "既定のプリセットと同じ",
+
+  // ----- タスクタブ(既定/編集部:計画/編集部:執筆/読み上げ) -----------------
+  taskDefaultLabel: "既定",
+  taskTipDefault: "翻訳・要約・番組生成など、役割が指定されていないすべての処理で使うモデルです。",
+  taskOrchestratorLabel: "編集部:計画",
+  taskTipOrchestrator: "新着アイテムをどう記事にまとめるか計画する役割です。強めのモデルを推奨します。",
+  taskWorkerLabel: "編集部:執筆",
+  taskTipWorker: "計画された記事を並列で執筆する役割です。軽めのモデルでも十分です。",
+  taskFollowDefault: "既定と同じ",
+  taskTtsLabel: "読み上げ",
+  taskTipTts: "番組をスタジオで読み上げる音声モデルです。未設定のときはブラウザ内蔵の読み上げを使います。",
+  ttsPickerBrowserOption: "ブラウザ標準(未設定)",
   ttsVoice: "ボイス",
   voiceRefreshTitle: "ボイス一覧を更新",
   voiceLoading: "ボイス一覧を取得中...",
   voiceErrorFallback: "ボイス一覧を取得できないため、標準ボイスを表示しています。手入力もできます。",
   voiceFetched: "{count}件のボイスを取得しました。",
-  sharedConfigCorruptedWarning:
-    "共有LLM設定(tc-shared-llm-config-v1)のレコードが壊れているため読み込めません。ここでの編集内容は保存されません。",
-  saveFailedWarning: "設定の保存に失敗しました。ブラウザのストレージ容量が不足している可能性があります。",
 };
 
 const en: typeof ja = {
@@ -106,10 +119,12 @@ const en: typeof ja = {
   tabsAriaLabel: "Settings tabs",
   switchToDark: "Switch to dark mode",
   switchToLight: "Switch to light mode",
+
   tabGeneral: "General",
-  tabLlm: "LLM",
+  tabConnection: "AI Connection",
   tabNetwork: "AI Network",
-  tabTts: "Voice",
+  tabTasks: "Tasks",
+
   language: "Language",
   displayName: "Display name",
   roomId: "Shared room ID",
@@ -126,25 +141,30 @@ const en: typeof ja = {
   showMediaPreviews: "Show thumbnails and link previews",
   showMediaPreviewsHint:
     "Automatically fetches OGP data (images and videos) from feed and source-link pages. May use the CORS proxy.",
-  llmHint:
-    "The connections (providers) and model configs (presets) used for article generation. Providers and presets are shared with other tik-choco apps on the same origin.",
-  providersHeading: "Providers",
-  providersHint: "Connection endpoints (Base URL + API key). Set one up in any app and the same connection is available in every other tik-choco app.",
-  addProvider: "Add",
-  newProviderLabel: "New provider",
-  providerNamePlaceholder: "Provider name",
-  deleteProvider: "Delete",
-  deleteProviderAria: "Delete provider",
-  deleteProviderInUse: "Can't delete — still referenced by a preset or TTS",
-  presetsHeading: "Model presets",
-  presetsHint: "Pick a provider and save a named model config (model, temperature, reasoning_effort).",
-  noProvidersHint: "Add a provider first.",
-  addPreset: "Add",
-  newPresetLabel: "New preset",
-  presetNamePlaceholder: "Preset name",
-  presetProviderLabel: "Provider",
-  deletePreset: "Delete",
-  deletePresetAria: "Delete preset",
+
+  connectionHint:
+    "The connections and models used for article generation, translation, and program narration. Shared with other tik-choco apps on the same origin.",
+  connectionsHeading: "Connections",
+  addConnectionTile: "Add connection",
+  modelsHeading: "Models",
+  addModelTile: "Add model",
+  addModelNeedConnection: "Add a connection first",
+  labelPlaceholder: "Name",
+  selectConnectionPlaceholder: "Choose a connection",
+  selectModelPlaceholder: "Choose a model",
+  modelSelectConnectionFirst: "Choose a connection first",
+  modelNamePlaceholder: "Enter a model name",
+  cancel: "Cancel",
+  add: "Add",
+  deleteConnectionTitle: "Delete connection",
+  deleteConnectionAria: "Delete connection",
+  deleteConnectionInUse: "Can't delete — still referenced by a model or TTS",
+  deletePresetTitle: "Delete model",
+  deletePresetAria: "Delete model",
+  presetBadgeDefault: "Default",
+  presetBadgeOrchestrator: "Newsroom: plan",
+  presetBadgeWorker: "Newsroom: write",
+  presetBadgeTts: "Narration",
   baseUrl: "Base URL",
   apiKey: "API key",
   model: "Model",
@@ -157,43 +177,42 @@ const en: typeof ja = {
   modelManualEntry: "Manual entry",
   temperature: "Temperature",
   reasoningEffort: "Reasoning effort (reasoning_effort)",
-  reasoningEffortNone: "Don't send",
-  defaultPreset: "Default preset",
   defaultPresetUnset: "Not set",
-  defaultBadge: "Default",
-  orchestratorPreset: "Orchestrator preset (newsroom generation)",
-  orchestratorPresetHint: "Plans how to split items into articles. A stronger model is recommended.",
-  workerPreset: "Worker preset (newsroom generation)",
-  workerPresetHint: "Writes the planned articles in parallel. A lighter model is fine.",
-  roleFollowDefault: "Follow the default preset",
-  networkHeading: "AI Network",
-  networkHint: "Routes LLM calls to a provider peer in a mistlib room (e.g. tc-translate or mistl). While connected, all generation and translation go through the AI Network.",
-  networkConsumerEnabled: "Use an LLM from the AI Network",
+  sharedConfigCorruptedWarning:
+    "The shared LLM config record (tc-shared-llm-config-v1) is corrupted and can't be loaded. Edits made here won't be saved.",
+  saveFailedWarning: "Failed to save your settings — the browser's storage may be full.",
+
+  networkTabHint:
+    "Routes LLM calls to a provider peer in a mistlib room (e.g. tc-translate or mistl). The room ID is shared with other tik-choco apps on the same origin.",
   networkRoomId: "AI Network room ID",
-  networkRoomIdHint: "Shared with other tik-choco apps on the same origin.",
+  networkRoomIdPlaceholder: "tc-llm",
+  networkConsumerTitle: "Use an LLM from the AI Network",
+  networkConsumerDesc: "While connected, all generation and translation go through the AI Network.",
   networkStatusIdle: "Not connected",
   networkStatusJoining: "Joining the room...",
   networkStatusSearching: "Looking for a provider...",
   networkStatusConnected: "Connected (models: {models})",
   networkStatusError: "Error: {detail}",
-  networkProviderEnabled: "Share this app's LLM with the AI Network",
-  networkProviderHint:
-    "Answers LLM requests from other peers (consumers) in the room using the default preset's endpoint. Providing keeps running even while the settings screen is closed.",
+  networkProviderTitle: "Share this app's LLM with the AI Network",
+  networkProviderDesc:
+    "Answers LLM requests from other peers in the room using the default preset's endpoint. Providing keeps running even while the settings screen is closed.",
   networkProviderNotConfigured: "Set a Base URL and model on the default preset to start providing.",
-  ttsHeading: "TTS (speech)",
-  ttsHint:
-    "Uses an OpenAI-compatible speech API (/audio/speech) to read programs aloud. When disabled or unconfigured, the browser's built-in TTS is used instead.",
-  ttsEnabled: "Use an OpenAI-compatible TTS",
-  ttsProvider: "TTS provider",
-  ttsProviderFollowDefault: "Same as default preset",
+
+  taskDefaultLabel: "Default",
+  taskTipDefault: "Used for translation, summarization, program generation, and anything else with no role of its own.",
+  taskOrchestratorLabel: "Newsroom: plan",
+  taskTipOrchestrator: "Plans how to group new items into articles. A stronger model is recommended.",
+  taskWorkerLabel: "Newsroom: write",
+  taskTipWorker: "Writes the planned articles in parallel. A lighter model is fine.",
+  taskFollowDefault: "Same as default",
+  taskTtsLabel: "Narration",
+  taskTipTts: "The voice model used to read programs aloud in the studio. When unset, the browser's built-in speech is used.",
+  ttsPickerBrowserOption: "Browser (not set)",
   ttsVoice: "Voice",
   voiceRefreshTitle: "Refresh voice list",
   voiceLoading: "Loading voice list...",
   voiceErrorFallback: "Couldn't load the voice list — showing the standard voices. You can also enter one manually.",
   voiceFetched: "Fetched {count} voice(s).",
-  sharedConfigCorruptedWarning:
-    "The shared LLM config record (tc-shared-llm-config-v1) is corrupted and can't be loaded. Edits made here won't be saved.",
-  saveFailedWarning: "Failed to save your settings — the browser's storage may be full.",
 };
 
 export const settings = { ja, en };

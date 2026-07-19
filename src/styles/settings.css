@@ -1,8 +1,11 @@
-/* SettingsView: 全般 / LLM / AI Network / 音声(TTS) の4タブ. Tracks tc-town's
-   settings screen layout (720px column, pill tab bar, profile cards) rewired
-   to tc-news' tokens. The AI Network provider card (ProviderStatusPanel) is
-   from @tik-choco/mistai/preact and brings its own styling via ui.css — only
-   the surrounding spacing is styled here. */
+/* SettingsView: 全般 / AI接続 / AI Network / タスク の4タブ. Tracks tc-town's
+   settings screen layout (720px column, pill tab bar) rewired to tc-news'
+   tokens. The provider/preset card grid, task-row tooltips, and AI Network
+   role cards live in styles/settings-llm.css (ported from tc-translate's
+   settings UI per tc-docs/drafts/llm-settings-common-v1.md). The AI Network
+   provider status panel (ProviderStatusPanel) is from @tik-choco/mistai/preact
+   and brings its own styling via ui.css — only the surrounding spacing is
+   styled here. */
 
 .settings-view {
   padding: var(--space-5);
@@ -81,16 +84,6 @@
   box-shadow: var(--shadow-1);
 }
 
-.settings-heading-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-}
-
-.settings-heading-row .settings-heading {
-  flex: 1;
-}
-
 .settings-heading {
   margin: 0;
   font-size: 1.05rem;
@@ -104,26 +97,6 @@
 .checkbox-field .field-hint {
   display: block;
   margin-top: 2px;
-}
-
-/* Thin rule separating the AI Network tab's consumer and provider
-   sub-sections (they share one settings-section panel, no heading level
-   between them). */
-.settings-divider {
-  height: 1px;
-  margin: var(--space-1) 0;
-  background: var(--border);
-  border: none;
-}
-
-/* networkProviderEnabled's checkbox label doubles as that sub-section's
-   heading (see settings-divider above) — the Server icon needs inline
-   alignment with its text, which plain checkbox-field spans don't need. */
-.checkbox-field--heading span {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  font-weight: 700;
 }
 
 /* --- Save-failure / corrupted-record warnings -------------------------------- */
@@ -140,42 +113,7 @@
   color: var(--danger-text);
 }
 
-/* --- LLM providers / presets (shared tc-shared-llm-config-v1 entries) -------------------------- */
-
-.profile-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
-.profile-card {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-4);
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-l);
-  transition: box-shadow var(--dur-fast) var(--ease);
-}
-
-.profile-card:hover {
-  box-shadow: var(--shadow-1);
-}
-
-.profile-card-head {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-}
-
-.profile-card-label {
-  flex: 1;
-  min-width: 0;
-  font-weight: 700 !important;
-}
-
-/* --- Model picker -------------------------------------------------------------- */
+/* --- Model picker (used inside settings-llm.css's card grid) ------------------ */
 
 .model-field {
   display: flex;
