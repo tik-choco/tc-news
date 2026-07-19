@@ -18,6 +18,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   globalShare: true,
   showMediaPreviews: true,
   programRuby: false,
+  shareMode: "auto",
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -46,6 +47,8 @@ function sanitizeAppSettings(value: unknown): AppSettings {
     globalShare: value.globalShare !== false,
     showMediaPreviews: typeof value.showMediaPreviews === "boolean" ? value.showMediaPreviews : true,
     programRuby: value.programRuby === true,
+    // 既存ユーザー(キー無し)はauto扱い — 記事生成後の自動共有は既定オン。
+    shareMode: value.shareMode === "manual" ? "manual" : "auto",
   };
 }
 

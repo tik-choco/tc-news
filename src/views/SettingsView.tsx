@@ -1053,6 +1053,20 @@ export function SettingsView(props: {
               </span>
             </label>
 
+            <label class="field">
+              <span>{t("settings.shareModeLabel")}</span>
+              <select
+                value={settings.shareMode}
+                onChange={(e) =>
+                  updateGeneral({ shareMode: e.currentTarget.value as AppSettings["shareMode"] })
+                }
+              >
+                <option value="auto">{t("settings.shareModeAuto")}</option>
+                <option value="manual">{t("settings.shareModeManual")}</option>
+              </select>
+              <span class="field-hint">{t("settings.shareModeDesc")}</span>
+            </label>
+
             <label class="checkbox-field">
               <input
                 type="checkbox"

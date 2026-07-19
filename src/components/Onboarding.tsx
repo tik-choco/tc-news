@@ -14,6 +14,7 @@ import {
   Plug,
   Rss,
   Settings as SettingsIcon,
+  Share2,
   Sparkles,
   UserPlus,
   X,
@@ -303,6 +304,12 @@ export function Onboarding(props: {
                 <Newspaper size={16} />
                 <span>
                   <strong>{t("onboarding.tourArticlesTitle")}</strong> — {t("onboarding.tourArticlesDesc")}
+                </span>
+              </li>
+              <li>
+                <Share2 size={16} />
+                <span>
+                  <strong>{t("onboarding.tourShareTitle")}</strong> — {t("onboarding.tourShareDesc")}
                 </span>
               </li>
               <li>

@@ -33,6 +33,10 @@ const ja = {
     "スタジオで生成する台本の漢字などにふりがな(ルビ)を付けて表示します。読み上げ音声には影響しません。",
   globalShareLabel: "グローバルにも配信",
   globalShareDesc: "ルームへ共有するとき、全員参加のグローバルルームにも記事を配信します。",
+  shareModeLabel: "記事の共有モード",
+  shareModeDesc: "自動では、生成した記事が自動でルームに共有されます。設定はいつでも変更できます。",
+  shareModeAuto: "自動(生成した記事を自動で共有)",
+  shareModeManual: "手動(共有ボタンを押したときだけ共有)",
   showMediaPreviews: "サムネイル・リンクプレビューを表示",
   showMediaPreviewsHint:
     "フィードや出典リンクのページからOGP情報(画像・動画)を自動取得して表示します。取得にCORSプロキシを使うことがあります。",
@@ -138,6 +142,11 @@ const en: typeof ja = {
     "Shows furigana readings above kanji in generated scripts. Does not affect the spoken audio.",
   globalShareLabel: "Also publish globally",
   globalShareDesc: "When sharing to your room, also publish the article to the global room everyone can read.",
+  shareModeLabel: "Article share mode",
+  shareModeDesc:
+    "In Auto mode, generated articles are shared to your room automatically. You can change this anytime.",
+  shareModeAuto: "Auto (share generated articles automatically)",
+  shareModeManual: "Manual (share only when you press the share button)",
   showMediaPreviews: "Show thumbnails and link previews",
   showMediaPreviewsHint:
     "Automatically fetches OGP data (images and videos) from feed and source-link pages. May use the CORS proxy.",

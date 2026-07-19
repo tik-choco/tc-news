@@ -103,6 +103,7 @@ export interface AppSettings {
   globalShare: boolean;       // 共有時にグローバルルーム(tc-global-articles)へも配信。既定 true
   showMediaPreviews: boolean; // サムネイル/リンクプレビュー(OGP自動取得)を表示。既定 true
   programRuby: boolean;       // 番組台本の生成時に漢字等へルビ({漢字|かんじ}記法)を付ける。既定 false
+  shareMode: "auto" | "manual"; // 記事生成後の共有方式。"auto"=自動でルームへ共有、"manual"=手動共有のみ。既定 "auto"
 }
 
 export type MainTab = "feed" | "shared" | "program" | "settings";

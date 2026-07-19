@@ -215,6 +215,11 @@ export const fr: Messages = {
     globalShareLabel: "Publier aussi globalement",
     globalShareDesc:
       "Lors du partage dans votre salon, publie aussi l'article dans le salon global accessible à tous.",
+    shareModeLabel: "Mode de partage des articles",
+    shareModeDesc:
+      "En mode automatique, les articles générés sont partagés automatiquement dans votre salon. Vous pouvez changer ce réglage à tout moment.",
+    shareModeAuto: "Automatique (partage automatiquement les articles générés)",
+    shareModeManual: "Manuel (partage uniquement lorsque vous appuyez sur le bouton de partage)",
     showMediaPreviews: "Afficher les miniatures et aperçus de liens",
     showMediaPreviewsHint:
       "Récupère et affiche automatiquement les données OGP (images et vidéos) des flux et des pages de liens sources. Peut utiliser le proxy CORS pour cela.",
@@ -382,6 +387,9 @@ export const fr: Messages = {
     tourSharedDesc: "Lisez en temps réel les articles de tout le monde via les salons P2P et la diffusion globale",
     tourSettingsTitle: "Paramètres",
     tourSettingsDesc: "Modifiez la configuration LLM, l'AI Network, la langue et le thème",
+    tourShareTitle: "Partage automatique",
+    tourShareDesc:
+      "Par défaut, les articles générés sont partagés automatiquement dans votre salon. Pour passer en manuel, changez le « Mode de partage des articles » dans les Paramètres à tout moment.",
     tourOutro: "Tous les réglages sont enregistrés automatiquement. Profitez bien de TC News !",
   },
 

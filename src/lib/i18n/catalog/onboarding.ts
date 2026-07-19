@@ -58,6 +58,9 @@ const ja = {
   tourSharedDesc: "P2Pルームとグローバル配信で、みんなの記事をリアルタイムに読めます",
   tourSettingsTitle: "設定",
   tourSettingsDesc: "LLM設定、AIネットワーク、言語やテーマを変更できます",
+  tourShareTitle: "自動共有",
+  tourShareDesc:
+    "既定では、生成した記事は自動でルームに共有されます。手動にしたいときは設定の『記事の共有モード』からいつでも変更できます。",
   tourOutro: "設定はすべて自動保存されます。それでは、楽しんでください!",
 };
 
@@ -111,6 +114,9 @@ const en: typeof ja = {
   tourSharedDesc: "Read everyone's articles in real time via P2P rooms and the global feed",
   tourSettingsTitle: "Settings",
   tourSettingsDesc: "Manage LLM settings, the AI network, language, and theme",
+  tourShareTitle: "Auto share",
+  tourShareDesc:
+    "By default, generated articles are shared to your room automatically. To switch to manual, change \"Article share mode\" in Settings anytime.",
   tourOutro: "Everything is saved automatically. Enjoy!",
 };
 
