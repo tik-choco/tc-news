@@ -1,14 +1,24 @@
-// Settings screen: 全般 / LLM / AI Network / 音声(TTS) の4タブ構成。
+// Settings screen: 全般 / AI接続 / AI Network / タスク の4タブ構成
+// (tc-docs/drafts/llm-settings-common-v1.md — AI設定・AI Network設定・タスク設定
+// の共通化ガイドv1のUI仕様に準拠。参照実装はtc-translateのSettingsModal).
 //   - general: app-level prefs, persisted via props.onSettingsChange.
-//   - llm: providers/presets + default/orchestrator/worker role pointers.
+//   - connection: providers/presets — a flat card grid with click-to-open
+//     inline editing (see server-list-header/model-row-list/model-row/
+//     grid-add-tile in styles/settings-llm.css). Both "接続先" (LlmProviderV1)
+//     and "モデル" (ModelPresetV1) grids are independent, not nested.
 //   - network: AI Networkのconsumer(他者のLLMを使う)とprovider(自分のLLMを
 //     提供する)。providerのライフサイクル本体はapp.tsx側
 //     (hooks/useNetworkProviderHost.ts)がマウントし続けており、ここは
 //     props.networkProvider(UseNetworkProviderResult)を表示するだけ —
-//     設定画面を閉じても提供が途切れないようにするため。
-//   - tts: 読み上げ(TTS)の接続先。
+//     設定画面を閉じても提供が途切れないようにするため。tc-newsのprovider
+//     hookは単一の既定プリセットだけを提供する作り(モデル一覧の広告や
+//     mist-network://疑似プロバイダの取り込みはない)なので、共有モデルの
+//     チェックリストは持たない — 提供ON/OFFと状態パネルのみ。
+//   - tasks: 既定/編集部:計画/編集部:執筆 の各preset+reasoning_effort、
+//     および読み上げ(TTS)のモデル/ボイスピッカーを1画面に統合。常時表示の
+//     説明段落は置かず、各行ラベルのhoverツールチップ(data-tip)に説明を持たせる。
 //
-// llm/network タブはどちらも2層の設定を編集する:
+// llm/network/tasksタブはどちらも2層の設定を編集する:
 //   - the co-owned shared config tc-shared-llm-config-v1 (providers/presets/
 //     tts/network.roomId — lib/llmConfig.ts), which other tik-choco apps on
 //     the same origin read and write too, and which same-tab components
@@ -28,7 +38,7 @@
 // unconditional at the top of the component), so switching tabs never resets
 // a live connection. Selected tab is remembered in localStorage (tc-town's
 // SettingsView does the same — see ../tc-town/src/views/SettingsView.tsx).
-import { useEffect, useMemo, useState } from "preact/hooks";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { JSX } from "preact";
 import {
   AlertTriangle,
@@ -41,8 +51,7 @@ import {
   Settings as SettingsIcon,
   Sliders,
   Sparkles,
-  Trash2,
-  Volume2,
+  X,
 } from "lucide-preact";
 import { MESSAGES_EN, MESSAGES_JA } from "@tik-choco/mistai";
 import { ProviderStatusPanel } from "@tik-choco/mistai/preact";
@@ -55,13 +64,12 @@ import {
   type LlmProviderV1,
   type ModelPresetV1,
   type SharedLlmConfigV1,
-  type VoiceConfigV1,
 } from "../lib/llmConfig";
 import { isLlmConfigCorrupted, subscribeLlmConfigStore, updateLlmConfig } from "../lib/llmConfigStore";
 import {
   DEFAULT_REASONING_EFFORT,
-  loadProviderSettings,
   REASONING_EFFORT_OPTIONS,
+  loadProviderSettings,
   saveProviderSettings,
   subscribeProviderSettings,
   type ProviderSettings,
@@ -81,10 +89,11 @@ import { LOCALES, LOCALE_LABELS, useLocale, useT } from "../lib/i18n";
 import { safeSetItem } from "../lib/safeStorage";
 import "../styles/components.css";
 import "../styles/settings.css";
+import "../styles/settings-llm.css";
 
-type SettingsTab = "general" | "llm" | "network" | "tts";
+type SettingsTab = "general" | "connection" | "network" | "tasks";
 
-const SETTINGS_TAB_IDS: SettingsTab[] = ["general", "llm", "network", "tts"];
+const SETTINGS_TAB_IDS: SettingsTab[] = ["general", "connection", "network", "tasks"];
 const SETTINGS_TAB_STORAGE_KEY = "tc-news:settings-tab";
 
 /** Loads the last-active tab from localStorage, validated against the known
@@ -103,6 +112,14 @@ function loadSettingsTab(): SettingsTab {
 function saveSettingsTab(tab: SettingsTab): void {
   // Non-fatal on failure — the tab just won't be remembered next visit.
   safeSetItem(SETTINGS_TAB_STORAGE_KEY, tab);
+}
+
+function getHostLabel(baseUrl: string): string {
+  try {
+    return new URL(baseUrl).host || baseUrl;
+  } catch {
+    return baseUrl;
+  }
 }
 
 /** Dedupes `options` against the current `value` (so a manually-typed or
@@ -320,20 +337,7 @@ export function SettingsView(props: {
     }
   }
 
-  // ----- Providers (shared) --------------------------------------------------
-  function addLlmProvider() {
-    const llmProvider: LlmProviderV1 = {
-      id: crypto.randomUUID(),
-      label: t("settings.newProviderLabel"),
-      baseUrl: "http://localhost:1234/v1",
-      apiKey: "",
-    };
-    applyLlmConfigUpdate((cfg) => {
-      cfg.providers.push(llmProvider);
-    });
-  }
-
-  function updateLlmProvider(id: string, patch: Partial<LlmProviderV1>) {
+  function updateLlmProvider(id: string, patch: Partial<Omit<LlmProviderV1, "id">>) {
     applyLlmConfigUpdate((cfg) => {
       const target = cfg.providers.find((p) => p.id === id);
       if (target) Object.assign(target, patch);
@@ -353,26 +357,7 @@ export function SettingsView(props: {
     });
   }
 
-  // ----- Presets (shared) -----------------------------------------------------
-  function addPreset() {
-    const firstProvider = shared.providers[0];
-    if (!firstProvider) return;
-    const preset: ModelPresetV1 = {
-      id: crypto.randomUUID(),
-      label: t("settings.newPresetLabel"),
-      providerId: firstProvider.id,
-      model: "",
-      temperature: 0.7,
-      reasoningEffort: DEFAULT_REASONING_EFFORT,
-    };
-    applyLlmConfigUpdate((cfg) => {
-      cfg.presets.push(preset);
-      // 既定が未設定なら、初めて追加したプリセットを自動的に既定にする。
-      if (cfg.defaultPresetId === "") cfg.defaultPresetId = preset.id;
-    });
-  }
-
-  function updatePreset(id: string, patch: Partial<ModelPresetV1>) {
+  function updatePreset(id: string, patch: Partial<Omit<ModelPresetV1, "id">>) {
     applyLlmConfigUpdate((cfg) => {
       const target = cfg.presets.find((p) => p.id === id);
       if (target) Object.assign(target, patch);
@@ -396,14 +381,6 @@ export function SettingsView(props: {
         workerPresetId: provider.workerPresetId === id ? "" : provider.workerPresetId,
       });
     }
-  }
-
-  // ----- TTS (shared VoiceConfigV1 + local enabled toggle) --------------------
-  function updateTts(patch: Partial<VoiceConfigV1>) {
-    applyLlmConfigUpdate((cfg) => {
-      const current: VoiceConfigV1 = cfg.tts ?? { model: "" };
-      cfg.tts = { ...current, ...patch };
-    });
   }
 
   // TTS falls back to the default preset's provider when it doesn't specify
@@ -444,12 +421,492 @@ export function SettingsView(props: {
     }
   }
 
+  // ----- AI Network room id (shared config, blur/Enter commit) --------------
+  const [roomIdDraft, setRoomIdDraft] = useState(shared.network.roomId);
+  useEffect(() => {
+    setRoomIdDraft(shared.network.roomId);
+  }, [shared.network.roomId]);
+  function commitRoomId() {
+    const roomId = roomIdDraft.trim();
+    if (roomId !== shared.network.roomId) {
+      applyLlmConfigUpdate((cfg) => {
+        cfg.network = { roomId };
+      });
+    }
+  }
+
   // ----- AI Network provider (share this app's LLM) -------------------------
   // The provider's connect/serve lifecycle itself lives in app.tsx
   // (hooks/useNetworkProviderHost.ts) so it keeps running while this settings
   // screen is closed; props.networkProvider is just the live status to render.
   const target = useMemo(() => resolvePreset(shared), [shared]);
   const upstreamConfigured = Boolean(target && target.model.trim() && target.baseUrl.trim());
+
+  // ===== AI接続タブ: 接続先(provider) / モデル(preset) の独立したカードグリッド =====
+  // providerId -> fetched models... is delegated entirely to ModelField's own
+  // useModelOptions hook (fetch-on-mount + refresh button), so no extra
+  // provider-level fetch state is needed here — only which single inline row
+  // (edit or add) is currently open.
+  const [editingProviderId, setEditingProviderId] = useState("");
+  const [addingProvider, setAddingProvider] = useState(false);
+  const [npLabel, setNpLabel] = useState("");
+  const [npBaseUrl, setNpBaseUrl] = useState("");
+  const [npApiKey, setNpApiKey] = useState("");
+
+  const [editingPresetId, setEditingPresetId] = useState("");
+  const [addingModel, setAddingModel] = useState(false);
+  const [amLabel, setAmLabel] = useState("");
+  const [amProviderId, setAmProviderId] = useState("");
+  const [amModel, setAmModel] = useState("");
+
+  function closeAllInlineRows(): void {
+    setEditingProviderId("");
+    setAddingProvider(false);
+    setEditingPresetId("");
+    setAddingModel(false);
+  }
+
+  // If the entity currently being edited disappears (e.g. removed from
+  // another tab/app via the shared config), close its inline row instead of
+  // leaving it editing a value that no longer exists.
+  useEffect(() => {
+    if (editingProviderId && !shared.providers.some((p) => p.id === editingProviderId)) setEditingProviderId("");
+    if (editingPresetId && !shared.presets.some((p) => p.id === editingPresetId)) setEditingPresetId("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shared.providers, shared.presets]);
+
+  // Every inline row commits on blur/selection rather than an explicit
+  // "決定" button, so the only remaining way to close a row that's just had
+  // its label tweaked is clicking outside it (or Escape).
+  const activeRowRef = useRef<HTMLDivElement | null>(null);
+  const mouseDownInsideRef = useRef(false);
+  useEffect(() => {
+    if (!editingProviderId && !addingProvider && !editingPresetId && !addingModel) return undefined;
+
+    function handleDocumentMouseDown(event: MouseEvent): void {
+      mouseDownInsideRef.current = Boolean(activeRowRef.current && activeRowRef.current.contains(event.target as Node));
+    }
+    function handleDocumentClick(event: MouseEvent): void {
+      if (activeRowRef.current && activeRowRef.current.contains(event.target as Node)) return;
+      if (mouseDownInsideRef.current) return;
+      closeAllInlineRows();
+    }
+    function handleKeyDown(event: KeyboardEvent): void {
+      if (event.key === "Escape") closeAllInlineRows();
+    }
+
+    document.addEventListener("mousedown", handleDocumentMouseDown);
+    document.addEventListener("click", handleDocumentClick);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleDocumentMouseDown);
+      document.removeEventListener("click", handleDocumentClick);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [editingProviderId, addingProvider, editingPresetId, addingModel]);
+
+  function handleOpenEditProvider(llmProvider: LlmProviderV1): void {
+    closeAllInlineRows();
+    setEditingProviderId(llmProvider.id);
+  }
+
+  function handleOpenAddProvider(): void {
+    closeAllInlineRows();
+    setAddingProvider(true);
+    setNpLabel("");
+    setNpBaseUrl("");
+    setNpApiKey("");
+  }
+
+  function handleSaveNewProvider(): void {
+    const baseUrl = npBaseUrl.trim().replace(/\/$/, "");
+    if (!baseUrl) return;
+    applyLlmConfigUpdate((cfg) => {
+      cfg.providers.push({
+        id: crypto.randomUUID(),
+        label: npLabel.trim(),
+        baseUrl,
+        apiKey: npApiKey,
+      });
+    });
+    setAddingProvider(false);
+  }
+
+  function handleRemoveProviderRow(llmProvider: LlmProviderV1): void {
+    if (providerInUse(llmProvider.id)) return;
+    deleteLlmProvider(llmProvider.id);
+    if (editingProviderId === llmProvider.id) setEditingProviderId("");
+    if (amProviderId === llmProvider.id) {
+      setAddingModel(false);
+      setAmProviderId("");
+      setAmModel("");
+    }
+  }
+
+  function handleOpenAddModel(): void {
+    closeAllInlineRows();
+    setAddingModel(true);
+    setAmLabel("");
+    setAmProviderId(shared.providers[0]?.id ?? "");
+    setAmModel("");
+  }
+
+  function handleSaveAddModel(model: string): void {
+    if (!amProviderId || !model.trim()) return;
+    applyLlmConfigUpdate((cfg) => {
+      const preset: ModelPresetV1 = {
+        id: crypto.randomUUID(),
+        label: amLabel.trim() || model.trim(),
+        providerId: amProviderId,
+        model: model.trim(),
+        temperature: 0.7,
+        reasoningEffort: DEFAULT_REASONING_EFFORT,
+      };
+      cfg.presets.push(preset);
+      if (cfg.defaultPresetId === "") cfg.defaultPresetId = preset.id;
+    });
+    setAddingModel(false);
+  }
+
+  function handleOpenEditPreset(preset: ModelPresetV1): void {
+    closeAllInlineRows();
+    setEditingPresetId(preset.id);
+  }
+
+  function getPresetBadges(preset: ModelPresetV1): string[] {
+    const badges: string[] = [];
+    if (shared.defaultPresetId === preset.id) badges.push(t("settings.presetBadgeDefault"));
+    if (provider.orchestratorPresetId === preset.id) badges.push(t("settings.presetBadgeOrchestrator"));
+    if (provider.workerPresetId === preset.id) badges.push(t("settings.presetBadgeWorker"));
+    if (shared.tts?.model && shared.tts.providerId === preset.providerId && shared.tts.model === preset.model) {
+      badges.push(t("settings.presetBadgeTts"));
+    }
+    return badges;
+  }
+
+  function renderProviderRow(llmProvider: LlmProviderV1) {
+    const isEditing = editingProviderId === llmProvider.id;
+    const inUse = providerInUse(llmProvider.id);
+
+    if (isEditing) {
+      return (
+        <div class="model-row model-row-editing" key={llmProvider.id} ref={activeRowRef}>
+          <div class="model-row-edit-fields">
+            <input
+              value={llmProvider.label}
+              onInput={(e) => updateLlmProvider(llmProvider.id, { label: e.currentTarget.value })}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") e.currentTarget.blur();
+              }}
+              placeholder={t("settings.labelPlaceholder")}
+              autoComplete="off"
+            />
+            <input
+              value={llmProvider.baseUrl}
+              title={llmProvider.baseUrl}
+              onInput={(e) => updateLlmProvider(llmProvider.id, { baseUrl: e.currentTarget.value })}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") e.currentTarget.blur();
+              }}
+              placeholder="http://localhost:1234/v1"
+              autoComplete="off"
+            />
+            <input
+              type="password"
+              value={llmProvider.apiKey}
+              onInput={(e) => updateLlmProvider(llmProvider.id, { apiKey: e.currentTarget.value })}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") e.currentTarget.blur();
+              }}
+              placeholder="sk-..."
+              autoComplete="off"
+            />
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div class="model-row" key={llmProvider.id}>
+        <button type="button" class="model-row-main" onClick={() => handleOpenEditProvider(llmProvider)}>
+          <span class="model-row-label">{llmProvider.label || getHostLabel(llmProvider.baseUrl)}</span>
+          <span class="model-row-model">{getHostLabel(llmProvider.baseUrl)}</span>
+        </button>
+        <button
+          type="button"
+          class="model-row-remove"
+          onClick={(e) => {
+            e.stopPropagation();
+            handleRemoveProviderRow(llmProvider);
+          }}
+          disabled={inUse}
+          title={inUse ? t("settings.deleteConnectionInUse") : t("settings.deleteConnectionTitle")}
+          aria-label={t("settings.deleteConnectionAria")}
+        >
+          <X size={13} />
+        </button>
+      </div>
+    );
+  }
+
+  function renderAddProviderTile() {
+    if (addingProvider) {
+      return (
+        <div class="model-row model-row-editing model-row-add" ref={activeRowRef}>
+          <div class="model-row-edit-fields">
+            <input
+              value={npLabel}
+              onInput={(e) => setNpLabel(e.currentTarget.value)}
+              placeholder={t("settings.labelPlaceholder")}
+              autoComplete="off"
+            />
+            <input
+              value={npBaseUrl}
+              onInput={(e) => setNpBaseUrl(e.currentTarget.value)}
+              placeholder="http://localhost:1234/v1"
+              autoComplete="off"
+            />
+            <input
+              type="password"
+              value={npApiKey}
+              onInput={(e) => setNpApiKey(e.currentTarget.value)}
+              placeholder="sk-..."
+              autoComplete="off"
+            />
+          </div>
+          <div class="model-row-add-actions">
+            <button
+              type="button"
+              class="connection-form-btn connection-form-btn-primary"
+              onClick={handleSaveNewProvider}
+              disabled={!npBaseUrl.trim()}
+            >
+              <Plus size={13} /> {t("settings.add")}
+            </button>
+            <button type="button" class="connection-form-btn" onClick={() => setAddingProvider(false)}>
+              {t("settings.cancel")}
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return (
+      <button type="button" class="grid-add-tile" onClick={handleOpenAddProvider}>
+        <Plus size={16} />
+        <span>{t("settings.addConnectionTile")}</span>
+      </button>
+    );
+  }
+
+  function renderModelRow(preset: ModelPresetV1) {
+    const isEditing = editingPresetId === preset.id;
+
+    if (isEditing) {
+      const presetProvider = shared.providers.find((p) => p.id === preset.providerId);
+      return (
+        <div class="model-row model-row-editing" key={preset.id} ref={activeRowRef}>
+          <div class="model-row-edit-fields">
+            <input
+              value={preset.label}
+              onInput={(e) => updatePreset(preset.id, { label: e.currentTarget.value })}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") e.currentTarget.blur();
+              }}
+              placeholder={t("settings.labelPlaceholder")}
+              autoComplete="off"
+            />
+            <select value={preset.providerId} onChange={(e) => updatePreset(preset.id, { providerId: e.currentTarget.value })}>
+              {shared.providers.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.label || getHostLabel(p.baseUrl)}
+                </option>
+              ))}
+            </select>
+            <div class="connection-form-model-field">
+              <ModelField
+                value={preset.model}
+                baseUrl={presetProvider?.baseUrl ?? ""}
+                apiKey={presetProvider?.apiKey ?? ""}
+                onChange={(model) => updatePreset(preset.id, { model })}
+              />
+            </div>
+            <input
+              type="number"
+              min="0"
+              max="2"
+              step="0.1"
+              value={preset.temperature ?? 0.7}
+              onInput={(e) => {
+                const parsed = Number.parseFloat(e.currentTarget.value);
+                updatePreset(preset.id, { temperature: Number.isFinite(parsed) ? parsed : 0.7 });
+              }}
+              aria-label={t("settings.temperature")}
+              title={t("settings.temperature")}
+            />
+            <select
+              value={preset.reasoningEffort || "none"}
+              onChange={(e) => updatePreset(preset.id, { reasoningEffort: e.currentTarget.value })}
+              aria-label={t("settings.reasoningEffort")}
+              title={t("settings.reasoningEffort")}
+            >
+              {REASONING_EFFORT_OPTIONS.map((effort) => (
+                <option key={effort} value={effort}>
+                  {effort}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      );
+    }
+
+    const badges = getPresetBadges(preset);
+    return (
+      <div class="model-row" key={preset.id}>
+        <button type="button" class="model-row-main" onClick={() => handleOpenEditPreset(preset)}>
+          <span class="model-row-label">{preset.label}</span>
+          <span class="model-row-model">{preset.model || t("settings.modelUnselected")}</span>
+          <span class="model-row-provider">
+            {shared.providers.find((p) => p.id === preset.providerId)?.label ?? ""}
+          </span>
+        </button>
+        {badges.length > 0 ? (
+          <span class="model-row-badges">
+            {badges.map((badge) => (
+              <span key={badge} class="task-badge">
+                {badge}
+              </span>
+            ))}
+          </span>
+        ) : null}
+        <button
+          type="button"
+          class="model-row-remove"
+          onClick={(e) => {
+            e.stopPropagation();
+            deletePreset(preset.id);
+            if (editingPresetId === preset.id) setEditingPresetId("");
+          }}
+          title={t("settings.deletePresetTitle")}
+          aria-label={t("settings.deletePresetAria")}
+        >
+          <X size={13} />
+        </button>
+      </div>
+    );
+  }
+
+  function renderAddModelTile() {
+    if (shared.providers.length === 0) {
+      return (
+        <button type="button" class="grid-add-tile" disabled title={t("settings.addModelNeedConnection")}>
+          <Plus size={16} />
+          <span>{t("settings.addModelTile")}</span>
+        </button>
+      );
+    }
+    if (addingModel) {
+      return (
+        <div class="model-row model-row-editing model-row-add" ref={activeRowRef}>
+          <div class="model-row-edit-fields">
+            <input
+              value={amLabel}
+              onInput={(e) => setAmLabel(e.currentTarget.value)}
+              placeholder={t("settings.labelPlaceholder")}
+              autoComplete="off"
+            />
+            <select value={amProviderId} onChange={(e) => setAmProviderId(e.currentTarget.value)}>
+              <option value="" disabled>
+                {t("settings.selectConnectionPlaceholder")}
+              </option>
+              {shared.providers.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.label || getHostLabel(p.baseUrl)}
+                </option>
+              ))}
+            </select>
+            <div class="connection-form-model-field">
+              <ModelField
+                value={amModel}
+                baseUrl={shared.providers.find((p) => p.id === amProviderId)?.baseUrl ?? ""}
+                apiKey={shared.providers.find((p) => p.id === amProviderId)?.apiKey ?? ""}
+                onChange={(model) => {
+                  setAmModel(model);
+                  if (model.trim()) handleSaveAddModel(model);
+                }}
+              />
+            </div>
+          </div>
+          <div class="model-row-add-actions">
+            <button type="button" class="connection-form-btn" onClick={() => setAddingModel(false)}>
+              {t("settings.cancel")}
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return (
+      <button type="button" class="grid-add-tile" onClick={handleOpenAddModel}>
+        <Plus size={16} />
+        <span>{t("settings.addModelTile")}</span>
+      </button>
+    );
+  }
+
+  // ===== タスクタブ: 既定 / 編集部:計画 / 編集部:執筆 の preset+reasoning_effort =====
+  // reasoning_effortはpreset自体が持つ値(共有config)を、そのタスクが実際に
+  // 解決するpreset単位で編集する — resolvePreset()と同じフォールバック規則
+  // ("" = 既定プリセットに従う)を使うので、既定と役割が同じpresetを指している
+  // 間は両方の行が同じ値を表示・編集する。
+  function renderReasoningEffortSelect(resolved: { presetId: string; reasoningEffort?: string } | null) {
+    return (
+      <div class="task-model-field">
+        <select
+          value={resolved?.reasoningEffort || "none"}
+          disabled={!resolved}
+          onChange={(e) => {
+            if (resolved) updatePreset(resolved.presetId, { reasoningEffort: e.currentTarget.value });
+          }}
+          aria-label={t("settings.reasoningEffort")}
+          title={t("settings.reasoningEffort")}
+        >
+          {REASONING_EFFORT_OPTIONS.map((effort) => (
+            <option key={effort} value={effort}>
+              {effort}
+            </option>
+          ))}
+        </select>
+      </div>
+    );
+  }
+
+  const orchestratorResolved = resolvePreset(shared, provider.orchestratorPresetId);
+  const workerResolved = resolvePreset(shared, provider.workerPresetId);
+  const defaultResolved = resolvePreset(shared, shared.defaultPresetId);
+
+  // ----- TTS task row: a single model picker (no engine select) -------------
+  const ttsModelRaw = shared.tts?.model ?? "";
+  const ttsProviderIdRaw = shared.tts?.providerId;
+  const matchedTtsPreset = shared.presets.find(
+    (p) => p.providerId === ttsProviderIdRaw && p.model === ttsModelRaw && ttsModelRaw !== "",
+  );
+
+  function handleTtsPickerChange(value: string): void {
+    if (value === "__current__") return;
+    if (value === "") {
+      applyLlmConfigUpdate((cfg) => {
+        cfg.tts = { model: "" };
+      });
+      updateProvider({ ...provider, ttsEnabled: false });
+      return;
+    }
+    const preset = shared.presets.find((p) => p.id === value);
+    if (!preset) return;
+    applyLlmConfigUpdate((cfg) => {
+      cfg.tts = { providerId: preset.providerId, model: preset.model };
+    });
+    updateProvider({ ...provider, ttsEnabled: true });
+  }
 
   return (
     <div class="settings-view">
@@ -473,13 +930,13 @@ export function SettingsView(props: {
           <button
             type="button"
             role="tab"
-            id="settings-tab-llm"
-            aria-selected={tab === "llm"}
-            aria-controls="settings-panel-llm"
-            class={`settings-tab${tab === "llm" ? " settings-tab--active" : ""}`}
-            onClick={() => setTab("llm")}
+            id="settings-tab-connection"
+            aria-selected={tab === "connection"}
+            aria-controls="settings-panel-connection"
+            class={`settings-tab${tab === "connection" ? " settings-tab--active" : ""}`}
+            onClick={() => setTab("connection")}
           >
-            <Cpu size={14} /> {t("settings.tabLlm")}
+            <Plug size={14} /> {t("settings.tabConnection")}
           </button>
           <button
             type="button"
@@ -495,13 +952,13 @@ export function SettingsView(props: {
           <button
             type="button"
             role="tab"
-            id="settings-tab-tts"
-            aria-selected={tab === "tts"}
-            aria-controls="settings-panel-tts"
-            class={`settings-tab${tab === "tts" ? " settings-tab--active" : ""}`}
-            onClick={() => setTab("tts")}
+            id="settings-tab-tasks"
+            aria-selected={tab === "tasks"}
+            aria-controls="settings-panel-tasks"
+            class={`settings-tab${tab === "tasks" ? " settings-tab--active" : ""}`}
+            onClick={() => setTab("tasks")}
           >
-            <Volume2 size={14} /> {t("settings.tabTts")}
+            <Cpu size={14} /> {t("settings.tabTasks")}
           </button>
         </div>
 
@@ -632,14 +1089,14 @@ export function SettingsView(props: {
           </section>
         ) : null}
 
-        {tab === "llm" ? (
+        {tab === "connection" ? (
           <section
             class="settings-section"
             role="tabpanel"
-            id="settings-panel-llm"
-            aria-labelledby="settings-tab-llm"
+            id="settings-panel-connection"
+            aria-labelledby="settings-tab-connection"
           >
-            <p class="field-hint">{t("settings.llmHint")}</p>
+            <p class="field-hint">{t("settings.connectionHint")}</p>
 
             {sharedConfigCorrupted ? (
               <p class="settings-alert" role="alert">
@@ -647,213 +1104,25 @@ export function SettingsView(props: {
               </p>
             ) : null}
 
-            {/* ----- Providers (shared接続情報) ----------------------------- */}
-            <div class="settings-heading-row">
-              <h2 class="settings-heading">
-                <Plug size={16} /> {t("settings.providersHeading")}
-              </h2>
-              <button type="button" class="btn btn-ghost" onClick={addLlmProvider}>
-                <Plus size={15} /> {t("settings.addProvider")}
-              </button>
+            <div class="server-list-header">
+              <label>{t("settings.connectionsHeading")}</label>
             </div>
-            <p class="field-hint">{t("settings.providersHint")}</p>
-
-            <div class="profile-list">
-              {shared.providers.map((llmProvider) => {
-                const inUse = providerInUse(llmProvider.id);
-                return (
-                  <div key={llmProvider.id} class="profile-card">
-                    <div class="profile-card-head">
-                      <input
-                        class="profile-card-label"
-                        value={llmProvider.label}
-                        placeholder={t("settings.providerNamePlaceholder")}
-                        onInput={(e) => updateLlmProvider(llmProvider.id, { label: e.currentTarget.value })}
-                      />
-                      <button
-                        type="button"
-                        class="icon-btn danger"
-                        onClick={() => deleteLlmProvider(llmProvider.id)}
-                        disabled={inUse}
-                        title={inUse ? t("settings.deleteProviderInUse") : t("settings.deleteProvider")}
-                        aria-label={t("settings.deleteProviderAria")}
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
-
-                    <label class="field">
-                      <span>{t("settings.baseUrl")}</span>
-                      <input
-                        value={llmProvider.baseUrl}
-                        placeholder="http://localhost:1234/v1"
-                        onInput={(e) => updateLlmProvider(llmProvider.id, { baseUrl: e.currentTarget.value })}
-                      />
-                    </label>
-
-                    <label class="field">
-                      <span>{t("settings.apiKey")}</span>
-                      <input
-                        type="password"
-                        value={llmProvider.apiKey}
-                        placeholder="sk-..."
-                        autocomplete="off"
-                        onInput={(e) => updateLlmProvider(llmProvider.id, { apiKey: e.currentTarget.value })}
-                      />
-                    </label>
-                  </div>
-                );
-              })}
+            <div class="settings-flat-section settings-flat-section-connection">
+              <div class="model-row-list">
+                {shared.providers.map((llmProvider) => renderProviderRow(llmProvider))}
+                {renderAddProviderTile()}
+              </div>
             </div>
 
-            {/* ----- Presets (shared モデル設定) ------------------------------ */}
-            <div class="settings-heading-row">
-              <h2 class="settings-heading">
-                <Cpu size={16} /> {t("settings.presetsHeading")}
-              </h2>
-              <button type="button" class="btn btn-ghost" onClick={addPreset} disabled={shared.providers.length === 0}>
-                <Plus size={15} /> {t("settings.addPreset")}
-              </button>
+            <div class="server-list-header">
+              <label>{t("settings.modelsHeading")}</label>
             </div>
-            <p class="field-hint">
-              {shared.providers.length === 0 ? t("settings.noProvidersHint") : t("settings.presetsHint")}
-            </p>
-
-            <div class="profile-list">
-              {shared.presets.map((preset) => {
-                const presetProvider = shared.providers.find((p) => p.id === preset.providerId);
-                return (
-                  <div key={preset.id} class="profile-card">
-                    <div class="profile-card-head">
-                      <input
-                        class="profile-card-label"
-                        value={preset.label}
-                        placeholder={t("settings.presetNamePlaceholder")}
-                        onInput={(e) => updatePreset(preset.id, { label: e.currentTarget.value })}
-                      />
-                      {preset.id === shared.defaultPresetId ? (
-                        <span class="badge">{t("settings.defaultBadge")}</span>
-                      ) : null}
-                      <button
-                        type="button"
-                        class="icon-btn danger"
-                        onClick={() => deletePreset(preset.id)}
-                        title={t("settings.deletePreset")}
-                        aria-label={t("settings.deletePresetAria")}
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
-
-                    <label class="field">
-                      <span>{t("settings.presetProviderLabel")}</span>
-                      <select
-                        value={preset.providerId}
-                        onChange={(e) => updatePreset(preset.id, { providerId: e.currentTarget.value })}
-                      >
-                        {shared.providers.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.label || p.id}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-
-                    <label class="field">
-                      <span>{t("settings.model")}</span>
-                      <ModelField
-                        value={preset.model}
-                        baseUrl={presetProvider?.baseUrl ?? ""}
-                        apiKey={presetProvider?.apiKey ?? ""}
-                        onChange={(model) => updatePreset(preset.id, { model })}
-                      />
-                    </label>
-
-                    <label class="field">
-                      <span>{t("settings.temperature")}</span>
-                      <input
-                        type="number"
-                        min={0}
-                        max={2}
-                        step={0.1}
-                        value={preset.temperature ?? 0.7}
-                        onInput={(e) => {
-                          const parsed = Number.parseFloat(e.currentTarget.value);
-                          updatePreset(preset.id, { temperature: Number.isFinite(parsed) ? parsed : 0.7 });
-                        }}
-                      />
-                    </label>
-
-                    <label class="field">
-                      <span>{t("settings.reasoningEffort")}</span>
-                      <select
-                        value={preset.reasoningEffort ?? ""}
-                        onChange={(e) => updatePreset(preset.id, { reasoningEffort: e.currentTarget.value })}
-                      >
-                        <option value="">{t("settings.reasoningEffortNone")}</option>
-                        {REASONING_EFFORT_OPTIONS.map((effort) => (
-                          <option key={effort} value={effort}>
-                            {effort}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-                );
-              })}
+            <div class="settings-flat-section settings-flat-section-models">
+              <div class="model-row-list">
+                {shared.presets.map((preset) => renderModelRow(preset))}
+                {renderAddModelTile()}
+              </div>
             </div>
-
-            <label class="field">
-              <span>{t("settings.defaultPreset")}</span>
-              <select
-                value={shared.defaultPresetId}
-                onChange={(e) => {
-                  const defaultPresetId = e.currentTarget.value;
-                  applyLlmConfigUpdate((cfg) => {
-                    cfg.defaultPresetId = defaultPresetId;
-                  });
-                }}
-              >
-                <option value="">{t("settings.defaultPresetUnset")}</option>
-                {shared.presets.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.label || p.id}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label class="field">
-              <span>{t("settings.orchestratorPreset")}</span>
-              <select
-                value={provider.orchestratorPresetId}
-                onChange={(e) => updateProvider({ ...provider, orchestratorPresetId: e.currentTarget.value })}
-              >
-                <option value="">{t("settings.roleFollowDefault")}</option>
-                {shared.presets.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.label || p.id}
-                  </option>
-                ))}
-              </select>
-              <span class="field-hint">{t("settings.orchestratorPresetHint")}</span>
-            </label>
-
-            <label class="field">
-              <span>{t("settings.workerPreset")}</span>
-              <select
-                value={provider.workerPresetId}
-                onChange={(e) => updateProvider({ ...provider, workerPresetId: e.currentTarget.value })}
-              >
-                <option value="">{t("settings.roleFollowDefault")}</option>
-                {shared.presets.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.label || p.id}
-                  </option>
-                ))}
-              </select>
-              <span class="field-hint">{t("settings.workerPresetHint")}</span>
-            </label>
           </section>
         ) : null}
 
@@ -864,128 +1133,185 @@ export function SettingsView(props: {
             id="settings-panel-network"
             aria-labelledby="settings-tab-network"
           >
-            <h2 class="settings-heading">
-              <Network size={16} /> {t("settings.networkHeading")}
-            </h2>
-            <p class="field-hint">{t("settings.networkHint")}</p>
+            <p class="field-hint">{t("settings.networkTabHint")}</p>
 
             <label class="field">
               <span>{t("settings.networkRoomId")}</span>
               <input
-                value={shared.network.roomId}
-                placeholder="tc-llm"
-                onInput={(e) => {
-                  const roomId = e.currentTarget.value;
-                  applyLlmConfigUpdate((cfg) => {
-                    cfg.network = { roomId };
-                  });
+                value={roomIdDraft}
+                onInput={(e) => setRoomIdDraft(e.currentTarget.value)}
+                onBlur={commitRoomId}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") e.currentTarget.blur();
                 }}
+                placeholder={t("settings.networkRoomIdPlaceholder")}
               />
-              <span class="field-hint">{t("settings.networkRoomIdHint")}</span>
             </label>
 
-            {/* ----- Consumer: 共有された他者のLLMを利用する ------------------- */}
-            <label class="checkbox-field">
-              <input
-                type="checkbox"
-                checked={provider.networkConsumerEnabled}
-                onChange={(e) => updateProvider({ ...provider, networkConsumerEnabled: e.currentTarget.checked })}
-              />
-              <span>{t("settings.networkConsumerEnabled")}</span>
-            </label>
+            <div class="settings-role-group">
+              <div class="settings-role-card">
+                <label class="settings-role-head">
+                  <input
+                    type="checkbox"
+                    checked={provider.networkConsumerEnabled}
+                    onChange={(e) => updateProvider({ ...provider, networkConsumerEnabled: e.currentTarget.checked })}
+                  />
+                  <span class="settings-role-title">
+                    <Network size={15} /> {t("settings.networkConsumerTitle")}
+                  </span>
+                </label>
+                <p class="settings-role-desc">{t("settings.networkConsumerDesc")}</p>
+                {provider.networkConsumerEnabled ? (
+                  <div class="settings-role-body">
+                    <p class="settings-role-desc" role="status">
+                      {consumerStatusLabel(consumer)}
+                    </p>
+                  </div>
+                ) : null}
+              </div>
 
-            {provider.networkConsumerEnabled ? (
-              <p class="field-hint" role="status">
-                {consumerStatusLabel(consumer)}
-              </p>
-            ) : null}
-
-            {/* ----- Provider: 自分のLLMをAI Networkへ提供する ------------------- */}
-            <div class="settings-divider" />
-
-            <label class="checkbox-field checkbox-field--heading">
-              <input
-                type="checkbox"
-                checked={provider.networkProviderEnabled}
-                onChange={(e) => updateProvider({ ...provider, networkProviderEnabled: e.currentTarget.checked })}
-              />
-              <span>
-                <Server size={14} /> {t("settings.networkProviderEnabled")}
-              </span>
-            </label>
-            <p class="field-hint">{t("settings.networkProviderHint")}</p>
-
-            {provider.networkProviderEnabled ? (
-              <ProviderStatusPanel
-                status={networkProvider.status}
-                statusUpdatedAt={networkProvider.statusUpdatedAt}
-                errorMessage={networkProvider.errorMessage}
-                ownNodeId={networkProvider.ownNodeId}
-                peers={networkProvider.peers}
-                consumerCount={networkProvider.consumerCount}
-                logs={networkProvider.logs}
-                messages={locale === "ja" ? MESSAGES_JA : MESSAGES_EN}
-                notice={!upstreamConfigured ? <p class="field-hint">{t("settings.networkProviderNotConfigured")}</p> : null}
-              />
-            ) : null}
+              <div class="settings-role-card">
+                <label class="settings-role-head">
+                  <input
+                    type="checkbox"
+                    checked={provider.networkProviderEnabled}
+                    onChange={(e) => updateProvider({ ...provider, networkProviderEnabled: e.currentTarget.checked })}
+                  />
+                  <span class="settings-role-title">
+                    <Server size={15} /> {t("settings.networkProviderTitle")}
+                  </span>
+                </label>
+                <p class="settings-role-desc">{t("settings.networkProviderDesc")}</p>
+                {provider.networkProviderEnabled ? (
+                  <div class="settings-role-body">
+                    <ProviderStatusPanel
+                      status={networkProvider.status}
+                      statusUpdatedAt={networkProvider.statusUpdatedAt}
+                      errorMessage={networkProvider.errorMessage}
+                      ownNodeId={networkProvider.ownNodeId}
+                      peers={networkProvider.peers}
+                      consumerCount={networkProvider.consumerCount}
+                      logs={networkProvider.logs}
+                      messages={locale === "ja" ? MESSAGES_JA : MESSAGES_EN}
+                      notice={!upstreamConfigured ? <p class="settings-role-desc">{t("settings.networkProviderNotConfigured")}</p> : null}
+                    />
+                  </div>
+                ) : null}
+              </div>
+            </div>
           </section>
         ) : null}
 
-        {tab === "tts" ? (
+        {tab === "tasks" ? (
           <section
             class="settings-section"
             role="tabpanel"
-            id="settings-panel-tts"
-            aria-labelledby="settings-tab-tts"
+            id="settings-panel-tasks"
+            aria-labelledby="settings-tab-tasks"
           >
-            <h2 class="settings-heading">
-              <Volume2 size={16} /> {t("settings.ttsHeading")}
-            </h2>
-            <p class="field-hint">{t("settings.ttsHint")}</p>
+            <div class="task-model-item">
+              <span data-tip={t("settings.taskTipDefault")}>{t("settings.taskDefaultLabel")}</span>
+              <div class="task-model-fields">
+                <div class="task-model-field">
+                  <select
+                    value={shared.defaultPresetId}
+                    onChange={(e) => {
+                      const defaultPresetId = e.currentTarget.value;
+                      applyLlmConfigUpdate((cfg) => {
+                        cfg.defaultPresetId = defaultPresetId;
+                      });
+                    }}
+                    aria-label={t("settings.taskDefaultLabel")}
+                  >
+                    <option value="">{t("settings.defaultPresetUnset")}</option>
+                    {shared.presets.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.label || p.id}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {renderReasoningEffortSelect(defaultResolved)}
+              </div>
+            </div>
 
-            <label class="checkbox-field">
-              <input
-                type="checkbox"
-                checked={provider.ttsEnabled}
-                onChange={(e) => updateProvider({ ...provider, ttsEnabled: e.currentTarget.checked })}
-              />
-              <span>{t("settings.ttsEnabled")}</span>
-            </label>
+            <div class="task-model-item">
+              <span data-tip={t("settings.taskTipOrchestrator")}>{t("settings.taskOrchestratorLabel")}</span>
+              <div class="task-model-fields">
+                <div class="task-model-field">
+                  <select
+                    value={provider.orchestratorPresetId}
+                    onChange={(e) => updateProvider({ ...provider, orchestratorPresetId: e.currentTarget.value })}
+                    aria-label={t("settings.taskOrchestratorLabel")}
+                  >
+                    <option value="">{t("settings.taskFollowDefault")}</option>
+                    {shared.presets.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.label || p.id}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {renderReasoningEffortSelect(orchestratorResolved)}
+              </div>
+            </div>
 
-            <label class="field">
-              <span>{t("settings.ttsProvider")}</span>
-              <select
-                value={shared.tts?.providerId ?? ""}
-                onChange={(e) => updateTts({ providerId: e.currentTarget.value || undefined })}
-              >
-                <option value="">{t("settings.ttsProviderFollowDefault")}</option>
-                {shared.providers.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.label || p.id}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <div class="task-model-item">
+              <span data-tip={t("settings.taskTipWorker")}>{t("settings.taskWorkerLabel")}</span>
+              <div class="task-model-fields">
+                <div class="task-model-field">
+                  <select
+                    value={provider.workerPresetId}
+                    onChange={(e) => updateProvider({ ...provider, workerPresetId: e.currentTarget.value })}
+                    aria-label={t("settings.taskWorkerLabel")}
+                  >
+                    <option value="">{t("settings.taskFollowDefault")}</option>
+                    {shared.presets.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.label || p.id}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {renderReasoningEffortSelect(workerResolved)}
+              </div>
+            </div>
 
-            <label class="field">
-              <span>{t("settings.model")}</span>
-              <ModelField
-                value={shared.tts?.model ?? ""}
-                baseUrl={ttsProvider?.baseUrl ?? ""}
-                apiKey={ttsProvider?.apiKey ?? ""}
-                onChange={(model) => updateTts({ model })}
-              />
-            </label>
-
-            <label class="field">
-              <span>{t("settings.ttsVoice")}</span>
-              <VoiceField
-                value={shared.tts?.voice ?? ""}
-                baseUrl={ttsProvider?.baseUrl ?? ""}
-                apiKey={ttsProvider?.apiKey ?? ""}
-                onChange={(voice) => updateTts({ voice })}
-              />
-            </label>
+            <div class="task-model-item">
+              <span data-tip={t("settings.taskTipTts")}>{t("settings.taskTtsLabel")}</span>
+              <div class="task-model-fields">
+                <div class="task-model-field">
+                  <select
+                    value={ttsModelRaw === "" ? "" : matchedTtsPreset ? matchedTtsPreset.id : "__current__"}
+                    onChange={(e) => handleTtsPickerChange(e.currentTarget.value)}
+                    aria-label={t("settings.taskTtsLabel")}
+                  >
+                    <option value="">{t("settings.ttsPickerBrowserOption")}</option>
+                    {ttsModelRaw && !matchedTtsPreset ? <option value="__current__">{ttsModelRaw}</option> : null}
+                    {shared.presets.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.label || p.model || p.id}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {ttsModelRaw !== "" ? (
+                  <div class="task-model-field">
+                    <VoiceField
+                      value={shared.tts?.voice ?? ""}
+                      baseUrl={ttsProvider?.baseUrl ?? ""}
+                      apiKey={ttsProvider?.apiKey ?? ""}
+                      onChange={(voice) =>
+                        applyLlmConfigUpdate((cfg) => {
+                          const current = cfg.tts ?? { model: "" };
+                          cfg.tts = { ...current, voice };
+                        })
+                      }
+                    />
+                  </div>
+                ) : null}
+              </div>
+            </div>
           </section>
         ) : null}
       </div>
