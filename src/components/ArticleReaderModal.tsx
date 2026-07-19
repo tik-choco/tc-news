@@ -25,7 +25,10 @@ import { chatUrl } from "../lib/chatShare";
 import { categoryLabelKey, coerceCategory } from "../lib/categories";
 import { deleteArticleEvaluations, evaluateArticle, getLatestArticleEvaluation } from "../lib/articleEvaluation";
 import { getTranslation, type ArticleTranslation } from "../lib/translationStore";
+import { getPartialTranslation } from "../lib/partialTranslationStore";
 import { isCancelError } from "../lib/jobQueue";
+import { useTranslationProgress } from "../hooks/useTranslationProgress";
+import { LanguagePicker } from "./LanguagePicker";
 import "../styles/components.css";
 import "../styles/readerModal.css";
 
@@ -72,6 +75,10 @@ export function ArticleReaderModal(props: {
   const [translatingId, setTranslatingId] = useState<string | null>(null);
   const [translateError, setTranslateError] = useState<string | null>(null);
   const [showTranslated, setShowTranslated] = useState(false);
+  // Translate target language, independent of the UI locale — defaults to it
+  // on mount/article change but the reader-toolbar LanguagePicker lets the
+  // user pick any of LOCALES for this article specifically.
+  const [targetLang, setTargetLang] = useState<Locale>(locale);
 
   // Mirrors ArticlesView's activeIdRef: lets an in-flight evaluate/translate
   // continuation tell whether the modal has since been reassigned to a
@@ -83,12 +90,29 @@ export function ArticleReaderModal(props: {
 
   const latestEval = getLatestArticleEvaluation(article.id);
   // Not stateful — re-read on every render, same idiom as ArticlesView.
-  const cachedTranslation = getTranslation(article.id, locale);
-  const needsTranslation = article.lang !== locale;
+  const cachedTranslation = getTranslation(article.id, targetLang);
+  const needsTranslation = article.lang !== targetLang;
+  // Live streaming progress for this article×targetLang — populated
+  // regardless of which surface (this modal, SharedView, or a background
+  // resume) actually started the translation job, since
+  // lib/translationProgress is a module singleton keyed by targetId×lang,
+  // not by job origin.
+  const liveProgress = useTranslationProgress("article", article.id, targetLang);
+  // A partial (interrupted) translation resumable from lib/translate.ts's
+  // chunk-level persistence — same re-read-every-render idiom as
+  // cachedTranslation, used only to relabel the translate button below.
+  const partialTranslation = getPartialTranslation(article.id, targetLang);
   const displayArticle: NewsArticle =
     showTranslated && cachedTranslation
       ? { ...article, title: cachedTranslation.title, excerpt: cachedTranslation.excerpt, body: cachedTranslation.body }
-      : article;
+      : liveProgress && !cachedTranslation
+        ? {
+            ...article,
+            title: liveProgress.title ?? article.title,
+            excerpt: liveProgress.subtitle ?? article.excerpt,
+            body: liveProgress.body || article.body,
+          }
+        : article;
 
   // A fresh article always starts with the evaluation panel closed and any
   // stale error/translation-view state from the previous article cleared.
@@ -97,6 +121,8 @@ export function ArticleReaderModal(props: {
     setEvalError(null);
     setShowTranslated(false);
     setTranslateError(null);
+    setTargetLang(locale);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [article.id]);
 
   useEffect(() => {
@@ -186,7 +212,7 @@ export function ArticleReaderModal(props: {
     setTranslatingId(article.id);
     setTranslateError(null);
     try {
-      await onTranslate(article, locale);
+      await onTranslate(article, targetLang);
       if (articleIdRef.current === article.id) setShowTranslated(true);
     } catch (err) {
       // A queue-toast cancel rejects with an AbortError — that's a user
@@ -241,16 +267,47 @@ export function ArticleReaderModal(props: {
               <Gauge size={14} />
               {evaluatingId === article.id ? t("articles.evaluating") : t("articles.evaluate")}
             </button>
+            <LanguagePicker
+              value={targetLang}
+              onChange={(lang) => {
+                setTargetLang(lang);
+                // Switching target language jumps straight to that
+                // language's cached translation if one exists; otherwise
+                // falls back to the original (mirrors selectArticle's
+                // showTranslated reset elsewhere in this file).
+                setShowTranslated(getTranslation(article.id, lang) !== null);
+              }}
+              disabled={translatingId === article.id || !!liveProgress}
+            />
             {needsTranslation && !cachedTranslation ? (
               <button
                 type="button"
                 class="btn btn-ghost"
-                disabled={translatingId === article.id}
+                // Disabled both for this modal's own in-flight request
+                // (translatingId) and for a job started elsewhere on the
+                // same article×locale (liveProgress) — the queue dedups by
+                // kind+targetId+lang regardless, but this avoids the button
+                // looking clickable while a job is already running.
+                disabled={translatingId === article.id || !!liveProgress}
                 onClick={() => void handleTranslate()}
               >
                 <Languages size={14} />
-                {translatingId === article.id ? t("translate.translating") : t("translate.translate")}
+                {translatingId === article.id || liveProgress
+                  ? t("translate.translating")
+                  : partialTranslation
+                    ? t("translate.resume")
+                    : t("translate.translate")}
               </button>
+            ) : null}
+            {liveProgress && !cachedTranslation ? (
+              <span class="badge">
+                {liveProgress.totalChunks > 0
+                  ? t("translate.translatingProgress", {
+                      done: String(liveProgress.doneChunks),
+                      total: String(liveProgress.totalChunks),
+                    })
+                  : t("translate.translating")}
+              </span>
             ) : null}
             {cachedTranslation ? (
               <button type="button" class="btn btn-ghost" onClick={() => setShowTranslated((v) => !v)}>
@@ -259,7 +316,7 @@ export function ArticleReaderModal(props: {
               </button>
             ) : null}
             {showTranslated && cachedTranslation ? (
-              <span class="badge">{t("translate.translatedBadge", { lang: LOCALE_LABELS[locale] })}</span>
+              <span class="badge">{t("translate.translatedBadge", { lang: LOCALE_LABELS[targetLang] })}</span>
             ) : null}
           </div>
           <div class="reader-modal-toolbar-actions">

@@ -17,12 +17,16 @@ import { useLinkPreview } from "../hooks/useLinkPreview";
 import { mediaPreviewsEnabled } from "../lib/linkPreview";
 import { fetchReadablePage, type ExtractedPage } from "../lib/pageExtract";
 import { formatRelativeTime } from "./ArticleCard";
-import { LOCALE_LABELS, useLocale, useT } from "../lib/i18n";
+import { LOCALE_LABELS, useLocale, useT, type Locale } from "../lib/i18n";
 import { categoryLabelKey, coerceCategory } from "../lib/categories";
 import { translateFeedContent } from "../lib/feedTranslate";
 import { getFeedTranslation, saveFeedTranslation } from "../lib/feedTranslationStore";
+import { getPartialFeedTranslation } from "../lib/partialFeedTranslationStore";
 import { enqueueJob, isCancelError } from "../lib/jobQueue";
 import { useJobQueue } from "../hooks/useJobQueue";
+import { useTranslationProgress } from "../hooks/useTranslationProgress";
+import { clearTranslationProgress, publishTranslationProgress } from "../lib/translationProgress";
+import { LanguagePicker } from "./LanguagePicker";
 import "../styles/components.css";
 import "../styles/feedModal.css";
 
@@ -67,12 +71,21 @@ export function FeedItemModal(props: {
 
   // Translate flow state. Single-flight is now enforced by the global
   // AI job queue (dedup on kind+targetId+lang), not local state — we
-  // just look up whether a job for this item+locale is still in flight.
+  // just look up whether a job for this item+targetLang is still in flight.
   const [translateError, setTranslateError] = useState<string | null>(null);
   const [showTranslated, setShowTranslated] = useState(false);
+  // Translate target language, independent of the UI locale — defaults to
+  // it but the LanguagePicker below lets the user pick any of LOCALES for
+  // this item specifically. The modal is remounted per item (see the parent,
+  // which keys it by item.id), so no item-change effect is needed to reset it.
+  const [targetLang, setTargetLang] = useState<Locale>(locale);
   // Not stateful — re-read on every render, same idiom as ArticlesView's
   // cachedTranslation.
-  const cachedTranslation = getFeedTranslation(item.id, locale);
+  const cachedTranslation = getFeedTranslation(item.id, targetLang);
+  // Same non-stateful idiom as cachedTranslation above — only meaningful when
+  // there's no finished translation and no job currently running for this
+  // item+targetLang, which the footer button logic below checks explicitly.
+  const partialTranslation = getPartialFeedTranslation(item.id, targetLang);
 
   // Re-renders whenever any queued job changes, which is what lets the
   // per-render getFeedTranslation() read above pick up a completed
@@ -83,29 +96,95 @@ export function FeedItemModal(props: {
       (j) =>
         j.kind === "feed" &&
         j.targetId === item.id &&
-        j.lang === locale &&
+        j.lang === targetLang &&
         (j.status === "queued" || j.status === "running" || j.status === "cancelling"),
     ) ?? null;
 
+  // Live streaming view of the in-flight translation (lib/translationProgress),
+  // published from inside the job's run callback below. Distinct from
+  // pendingJob (which only carries queue status/free-text progress) — this
+  // is the actual partial title/summary/html the LLM has produced so far, so
+  // the modal can render it before the job settles.
+  const liveProgress = useTranslationProgress("feed", item.id, targetLang);
+
+  // Picking a new target language swaps which cache/job the flow above reads
+  // from — jump straight to that language's cached translation if one
+  // exists, otherwise fall back to the original so a stale translation in
+  // the previous language never lingers on screen under the new label.
+  function handleTargetLangChange(lang: Locale) {
+    setTargetLang(lang);
+    setShowTranslated(getFeedTranslation(item.id, lang) !== null);
+  }
+
   function handleTranslate() {
     setTranslateError(null);
+    // Snapshot the language at enqueue time: the job closure below must keep
+    // translating into the language the user picked when they clicked
+    // translate, even if they flip the picker again while the job is still
+    // running (pendingJob/liveProgress lookups above track targetLang live
+    // and will simply stop matching this now-stale job, which is correct —
+    // the running job isn't cancelled, it just becomes "some other
+    // language's job" from the UI's point of view).
+    const lang = targetLang;
     void enqueueJob(
-      { kind: "feed", targetId: item.id, label: item.title || item.link, lang: locale },
-      async (signal) => {
+      { kind: "feed", targetId: item.id, label: item.title || item.link, lang },
+      async (signal, report) => {
         // Fetch (or re-use the cached) readable page inside the job so the
         // translation survives the modal closing and doesn't wait on the
         // modal's own extraction effect. fetchReadablePage dedupes in-flight
         // requests and caches, so this is free when the modal already loaded it.
         const extracted = await fetchReadablePage(item.link);
-        const result = await translateFeedContent(
-          { title: item.title, summary: item.summary, html: extracted?.html ?? null },
-          { profileId: "", targetLanguage: LOCALE_LABELS[locale], signal },
-        );
-        saveFeedTranslation({ itemId: item.id, lang: locale, ...result, translatedAt: Date.now() });
-        return result;
+        // try/finally, not a plain call after: clearTranslationProgress must
+        // run on every exit path (success, failure, or cancellation) so a
+        // stale live-progress entry never outlives its job — the modal may
+        // well be unmounted by then, so this can't live in a component
+        // effect/unmount cleanup, it has to be the job itself that owns it.
+        try {
+          const result = await translateFeedContent(
+            { title: item.title, summary: item.summary, html: extracted?.html ?? null },
+            {
+              profileId: "",
+              targetLanguage: LOCALE_LABELS[lang],
+              itemId: item.id,
+              lang,
+              signal,
+              onProgress: (p) => {
+                publishTranslationProgress({
+                  kind: "feed",
+                  targetId: item.id,
+                  lang,
+                  title: p.title,
+                  subtitle: p.summary,
+                  body: p.html,
+                  doneChunks: p.doneChunks,
+                  totalChunks: p.totalChunks,
+                });
+                // totalChunks is 0 until the HTML chunk split has happened
+                // (or immediately, for a title/summary-only item with no
+                // page HTML at all) — reporting "0/0" to the queue toast
+                // would read as a stuck/broken job, so skip it until there's
+                // a real denominator.
+                if (p.totalChunks > 0) report(`${p.doneChunks}/${p.totalChunks}`);
+              },
+            },
+          );
+          saveFeedTranslation({ itemId: item.id, lang, ...result, translatedAt: Date.now() });
+          return result;
+        } finally {
+          clearTranslationProgress("feed", item.id, lang);
+        }
       },
     )
-      .then(() => setShowTranslated(true))
+      .then(() => {
+        // Unconditional, same as before targetLang existed: setShowTranslated
+        // just flips the toggle, it doesn't decide *which* language renders.
+        // The render below re-reads cachedTranslation off the live targetLang
+        // state, so if the user switched languages while this job ran, the
+        // toggle now shows whatever (if anything) is cached for whatever
+        // language they're currently looking at — never this job's result
+        // bleeding into an unrelated selection.
+        setShowTranslated(true);
+      })
       .catch((err) => {
         // setShowTranslated/setTranslateError after unmount is a harmless
         // no-op in Preact — the queue toast is the durable progress surface,
@@ -161,7 +240,13 @@ export function FeedItemModal(props: {
 
         <header class="fim-header">
           <a class="fim-title" href={item.link} target="_blank" rel="noopener noreferrer">
-            {(showTranslated && cachedTranslation ? cachedTranslation.title : item.title) || t("feed.untitledItem")}
+            {/* liveProgress.title slots into the same "translated title"
+             * spot cachedTranslation.title normally occupies, so a
+             * streaming translation's title shows up as soon as the
+             * title/summary call resolves — well before the job (and thus
+             * cachedTranslation) actually completes. */}
+            {(showTranslated && cachedTranslation ? cachedTranslation.title : liveProgress?.title ?? item.title) ||
+              t("feed.untitledItem")}
           </a>
           <div class="fim-meta">
             <span>{item.feedLabel}</span>
@@ -171,7 +256,7 @@ export function FeedItemModal(props: {
             <span>{formatRelativeTime(item.publishedAt, locale)}</span>
             {category ? <span class="category-chip">{t(categoryLabelKey(category))}</span> : null}
             {showTranslated && cachedTranslation ? (
-              <span class="badge">{t("translate.translatedBadge", { lang: LOCALE_LABELS[locale] })}</span>
+              <span class="badge">{t("translate.translatedBadge", { lang: LOCALE_LABELS[targetLang] })}</span>
             ) : null}
           </div>
         </header>
@@ -219,7 +304,34 @@ export function FeedItemModal(props: {
 
         <div class="fim-body">
           {translateError ? <p class="fim-translate-error">{translateError}</p> : null}
-          {showTranslated && cachedTranslation ? (
+          {liveProgress && !cachedTranslation ? (
+            // Streaming branch takes priority over everything below it: while
+            // a translation job for this item+targetLang is in flight, its partial
+            // output (however little has arrived so far) is more useful than
+            // either the loading spinner or the untranslated original. Once
+            // the job finishes, saveFeedTranslation() populates cachedTranslation
+            // and clearTranslationProgress() drops liveProgress in the same
+            // finally block (see handleTranslate above), so this branch and
+            // the showTranslated one below never both want to render at once.
+            <>
+              {liveProgress.body ? (
+                <div class="fim-article" dangerouslySetInnerHTML={{ __html: liveProgress.body }} />
+              ) : liveProgress.subtitle ? (
+                <p class="fim-summary">{liveProgress.subtitle}</p>
+              ) : null}
+              <div class="fim-loading">
+                <Loader2 size={16} class="spin" />
+                <span>
+                  {liveProgress.totalChunks > 0
+                    ? t("translate.translatingProgress", {
+                        done: String(liveProgress.doneChunks),
+                        total: String(liveProgress.totalChunks),
+                      })
+                    : t("translate.translating")}
+                </span>
+              </div>
+            </>
+          ) : showTranslated && cachedTranslation ? (
             <>
               {cachedTranslation.html ? (
                 <div class="fim-article" dangerouslySetInnerHTML={{ __html: cachedTranslation.html }} />
@@ -249,6 +361,12 @@ export function FeedItemModal(props: {
             {selected ? <Check size={15} /> : <Sparkles size={15} />}
             {selected ? t("feed.removeFromSelection") : t("feed.addToSelection")}
           </button>
+          {/* Disabled while a job is in flight for this item — swapping the
+           * target language mid-translate wouldn't affect the running job
+           * (handleTranslate snapshots targetLang at enqueue time), so
+           * leaving it live would misleadingly suggest the pick controls
+           * what's currently loading. */}
+          <LanguagePicker value={targetLang} onChange={handleTargetLangChange} disabled={pendingJob !== null} />
           {cachedTranslation ? (
             <button type="button" class="btn btn-ghost" onClick={() => setShowTranslated((v) => !v)}>
               <Languages size={15} />
@@ -265,8 +383,23 @@ export function FeedItemModal(props: {
               {pendingJob?.status === "queued"
                 ? t("translate.statusQueued")
                 : pendingJob
-                  ? t("translate.translating")
-                  : t("translate.translate")}
+                  ? // Running/cancelling: prefer the live chunk counter once
+                    // it exists (totalChunks stays 0 until the HTML chunk
+                    // split — or the title/summary call for chunk-less
+                    // items — has happened) over the plain "Translating..." text.
+                    liveProgress && liveProgress.totalChunks > 0
+                    ? t("translate.translatingProgress", {
+                        done: String(liveProgress.doneChunks),
+                        total: String(liveProgress.totalChunks),
+                      })
+                    : t("translate.translating")
+                  : // No job running and nothing cached: a leftover partial
+                    // save from an earlier abandoned attempt means this click
+                    // will resume instead of starting over (feedTranslate.ts
+                    // handles that transparently) — label it accordingly.
+                    partialTranslation
+                    ? t("translate.resume")
+                    : t("translate.translate")}
             </button>
           )}
           <a class="btn btn-ghost" href={item.link} target="_blank" rel="noopener noreferrer">

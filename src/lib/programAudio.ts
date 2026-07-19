@@ -1,9 +1,15 @@
 // Podcast-style audio for RadioProgram: the program creator renders each
 // segment's script to speech via the OpenAI-compatible TTS endpoint
-// (lib/openaiTts.ts) and stores the resulting bytes (usually mp3, but some
-// OpenAI-compatible servers return wav despite the mp3 request — see
-// audioMerge.ts) in mistlib's content-addressed storage
-// (lib/mistClient.ts's storage_add/storage_get).
+// (lib/openaiTts.ts) and stores the resulting bytes in mistlib's
+// content-addressed storage (lib/mistClient.ts's storage_add/storage_get).
+// openaiTts always *requests* response_format: "mp3", but some
+// OpenAI-compatible servers return WAV regardless (see audioMerge.ts's
+// sniffAudioContainer). Storage defaults to mp3 either way: WAV bytes are
+// transcoded via wavToMp3.ts (a synchronous lamejs-based encoder, loaded
+// lazily via dynamic import since the WAV path is the exception) before
+// they ever reach storage_add, so both freshly rendered and already-shared
+// programs end up stored/downloaded as mp3 — smaller files and no surprise
+// .wav download for a feature the UI always calls "mp3".
 // The ordered CID array (ProgramAudioSource.cids) is carried on the
 // RadioProgram and rides along on the existing tc-news:program wire
 // (newsWire.ts's ProgramWire — its `cid` field points at the whole program
@@ -26,6 +32,11 @@ import { storage_add, storage_get } from "./mistClient";
 import { synthesizeSpeech, type OpenAiVoiceConfig } from "./openaiTts";
 import type { SpeakSegmentsOptions, TtsPlayback } from "./tts";
 
+// wavToMp3 pulls in the lamejs encoder (~150 kB minified) but is only needed
+// when a TTS server ignores the mp3 request and returns WAV — import it
+// lazily so the common path never pays for it in the main chunk.
+const loadWavToMp3 = () => import("./wavToMp3");
+
 /** Ordered mistlib storage CIDs for a program's rendered segment audio, plus the shared MIME type of every blob. */
 export interface ProgramAudioSource {
   cids: string[];
@@ -36,6 +47,16 @@ export interface ProgramAudioSource {
  * セグメント台本を順にTTSレンダリングして mistlib storage へ格納し、CID配列を返す。
  * エンドポイントへの同時多発リクエストを避けるため逐次実行する。各セグメントの
  * 格納が完了するたびに opts.onProgress(done, total) を呼ぶ。
+ *
+ * 保存は既定で mp3 になる: 最初のセグメントの実バイトを sniffAudioContainer で
+ * 判定し、"wav" ならその場で wavToMp3 に通してから storage_add する(以後の全
+ * セグメントも同じコンテナのはずなので変換して保存)。セグメント0の変換が
+ * throw した場合は console.warn の上、従来どおり WAV のまま保存し、以後の
+ * セグメントも変換を試みない(サーバーが一貫してWAVを返す場合、毎セグメント
+ * 変換を試みて毎回失敗するのは無駄なため)。セグメント1以降の変換が throw
+ * した場合はそのまま伝播させる — 同一サーバー由来のバイト列なのでセグメント0
+ * を通過したなら通常起きないが、万一発生した場合はジョブキューに失敗として
+ * 表示させ、silent に壊れたファイルを保存しない。"mp3"/"unknown" は無変換。
  *
  * opts.signal はジョブキュー(lib/jobQueue)からのキャンセルを伝える。各セグメント
  * のループ先頭でのみチェックし、TTS呼び出し自体は中断できない(cooperative)—
@@ -59,6 +80,11 @@ export async function renderProgramAudio(
   // use that container consistently for every segment's storage filename.
   let ext = ".mp3";
   let audioMime = "audio/mpeg";
+  // Decided once, from segment 0: whether every remaining segment should be
+  // run through wavToMp3 before storage_add. false covers both "the server
+  // returned mp3/unknown to begin with" and "it returned wav but segment 0's
+  // conversion failed" — either way, later segments follow suit unconditionally.
+  let convertWavToMp3 = false;
   for (let i = 0; i < total; i++) {
     if (opts?.signal?.aborted) {
       const err = new Error("Request cancelled.");
@@ -66,11 +92,32 @@ export async function renderProgramAudio(
       throw err;
     }
     const blob = await synthesizeSpeech(segmentTexts[i], tts);
-    const bytes = new Uint8Array(await blob.arrayBuffer());
+    // Annotated as the generic (ArrayBufferLike-backed) Uint8Array so the
+    // wavToMp3 result can be re-assigned below.
+    let bytes: Uint8Array = new Uint8Array(await blob.arrayBuffer());
     if (i === 0) {
       const container = sniffAudioContainer(bytes);
-      audioMime = mimeForContainer(container, "audio/mpeg");
-      ext = extensionForContainer(container);
+      if (container === "wav") {
+        try {
+          bytes = (await loadWavToMp3()).wavToMp3(bytes);
+          convertWavToMp3 = true;
+          audioMime = "audio/mpeg";
+          ext = ".mp3";
+        } catch (err) {
+          console.warn("[programAudio] wavToMp3 failed on segment 0; storing as wav", err);
+          audioMime = "audio/wav";
+          ext = ".wav";
+        }
+      } else {
+        audioMime = mimeForContainer(container, "audio/mpeg");
+        ext = extensionForContainer(container);
+      }
+    } else if (convertWavToMp3) {
+      // Segment 0 established mp3-via-conversion; keep every later segment
+      // consistent with it. A throw here propagates (see doc comment) rather
+      // than silently falling back, since it would mean the same server
+      // suddenly emitted bytes wavToMp3 can't parse.
+      bytes = (await loadWavToMp3()).wavToMp3(bytes);
     }
     const cid = await storage_add(`${programId}.seg${i}${ext}`, bytes);
     audioCids.push(cid);
@@ -272,12 +319,18 @@ function naiveConcatBytes(segments: Uint8Array[]): Uint8Array {
  * source.mime は共有元・レガシー番組では実体と食い違うことがあるため信用せず、
  * 保存対象の実バイトを sniffAudioContainer で判定してから分岐する:
  *   - mp3: mergeMp3Segments でヘッダー/メタデータフレームを除去して連結
- *   - wav: mergeWavSegments で単一RIFFに統合。パース不能/fmt不一致でthrowした
- *     場合は console.warn の上、従来の単純連結にフォールバック(今までと同じ
- *     壊れ方で、悪化はしない)
+ *   - wav: mergeWavSegments で単一RIFFに統合したうえで、さらに wavToMp3 に
+ *     通してダウンロードも既定でmp3にする(WAVのまま保存された既存/共有番組の
+ *     ダウンロードもmp3に揃える狙い)。wavToMp3 が throw した場合は
+ *     console.warn の上、mergeWavSegments済みのWAVのままダウンロードする。
+ *     mergeWavSegments 自体がパース不能/fmt不一致で throw した場合は
+ *     console.warn の上、従来の単純連結にフォールバックし(今までと同じ壊れ方
+ *     で、悪化はしない)、その場合は wavToMp3 を試みない — 先頭セグメントだけ
+ *     の壊れたWAVを部分変換すると、かえって実害のある「もっともらしいmp3」を
+ *     作ってしまうため
  *   - unknown: 従来通り単純連結
- * 判定結果の container から Blob の type とダウンロードファイル名の拡張子も
- * 導く。
+ * mp3変換に成功した場合は Blob の type / ダウンロードファイル名の拡張子を
+ * audio/mpeg・.mp3 に、それ以外は判定結果の container から導く。
  */
 export async function downloadProgramAudio(
   source: ProgramAudioSource,
@@ -288,16 +341,22 @@ export async function downloadProgramAudio(
   const bytesList = await fetchProgramAudioBytes(source, opts);
 
   let container: AudioContainer = "unknown";
-  let merged: Uint8Array;
-  if (bytesList.length === 0) {
-    merged = new Uint8Array(0);
-  } else {
+  let merged: Uint8Array = new Uint8Array(0);
+  let convertedToMp3 = false;
+
+  if (bytesList.length > 0) {
     container = sniffAudioContainer(bytesList[0]);
     if (container === "mp3") {
       merged = mergeMp3Segments(bytesList);
     } else if (container === "wav") {
       try {
         merged = mergeWavSegments(bytesList);
+        try {
+          merged = (await loadWavToMp3()).wavToMp3(merged);
+          convertedToMp3 = true;
+        } catch (err) {
+          console.warn("[programAudio] wavToMp3 failed; downloading as wav", err);
+        }
       } catch (err) {
         console.warn("[programAudio] mergeWavSegments failed; falling back to naive concatenation", err);
         merged = naiveConcatBytes(bytesList);
@@ -307,8 +366,8 @@ export async function downloadProgramAudio(
     }
   }
 
-  const mime = mimeForContainer(container, source.mime);
-  const ext = extensionForContainer(container);
+  const mime = convertedToMp3 ? "audio/mpeg" : mimeForContainer(container, source.mime);
+  const ext = convertedToMp3 ? ".mp3" : extensionForContainer(container);
   // See fetchProgramAudioBlobs's comment: re-wrap for BlobPart's stricter
   // (plain-ArrayBuffer-backed) Uint8Array requirement.
   const combined = new Blob([new Uint8Array(merged)], { type: mime });

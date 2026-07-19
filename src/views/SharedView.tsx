@@ -32,7 +32,10 @@ import { ARTICLE_CATEGORIES, categoryLabelKey, coerceCategory, type ArticleCateg
 import { chatUrl } from "../lib/chatShare";
 import { loadStoredDidIdentity } from "../crypto/didIdentity";
 import { getTranslation, type ArticleTranslation } from "../lib/translationStore";
+import { getPartialTranslation } from "../lib/partialTranslationStore";
 import { isCancelError } from "../lib/jobQueue";
+import { useTranslationProgress } from "../hooks/useTranslationProgress";
+import { LanguagePicker } from "../components/LanguagePicker";
 import { loadReactions, subscribeReactions } from "../lib/reactionStore";
 import { computeDailyRanking, type RankingEntry } from "../lib/ranking";
 import { loadMyArticles } from "../lib/articleStore";
@@ -127,6 +130,11 @@ export function SharedView(props: {
   const [translatingId, setTranslatingId] = useState<string | null>(null);
   const [translateError, setTranslateError] = useState<string | null>(null);
   const [showTranslated, setShowTranslated] = useState(false);
+  // Translate target language, independent of the UI locale — defaults to it
+  // whenever the active article changes (see selectArticle below) but the
+  // reader-toolbar LanguagePicker lets the user pick any of LOCALES for this
+  // article specifically.
+  const [targetLang, setTargetLang] = useState<Locale>(locale);
   // Own DID, for hiding the mute toggle on the reader's own authored articles
   // (see W7 contract). Read once from the identity already persisted by
   // app.tsx's ensureDidIdentity() on mount; not reactive since a DID never
@@ -235,6 +243,7 @@ export function SharedView(props: {
     onSelectionChange?.(id);
     setShowTranslated(false);
     setTranslateError(null);
+    setTargetLang(locale);
   }
 
   function switchSource(next: Source) {
@@ -325,7 +334,7 @@ export function SharedView(props: {
     setTranslatingId(article.id);
     setTranslateError(null);
     try {
-      await onTranslate(article, locale, source);
+      await onTranslate(article, targetLang, source);
       setShowTranslated(true);
     } catch (err) {
       // A queue-toast cancel rejects with an AbortError — that's a user
@@ -352,12 +361,28 @@ export function SharedView(props: {
   const sourceSharedFeeds = source === "room" ? roomSharedFeeds : globalSharedFeeds;
   const active = sourceArticles.find((a) => a.id === activeId) ?? null;
   // Not stateful — re-read on every render, same idiom as ArticlesView's latestEval.
-  const cachedTranslation = active ? getTranslation(active.id, locale) : null;
-  const needsTranslation = active ? active.lang !== locale : false;
+  const cachedTranslation = active ? getTranslation(active.id, targetLang) : null;
+  const needsTranslation = active ? active.lang !== targetLang : false;
+  // Live streaming progress for the active article×targetLang — same
+  // module-singleton lookup as ArticleReaderModal, so a translation started
+  // from *this* view, the modal, or a background resume all show up here.
+  // Called unconditionally (rules-of-hooks) with "" as a never-matching
+  // targetId when nothing is selected, rather than skipping the hook call.
+  const liveProgress = useTranslationProgress("article", active?.id ?? "", targetLang);
+  // Same re-read-every-render idiom as cachedTranslation — only used to
+  // relabel the translate icon-btn below as "resume" when applicable.
+  const partialTranslation = active ? getPartialTranslation(active.id, targetLang) : null;
   const displayArticle: NewsArticle | null =
     active && showTranslated && cachedTranslation
       ? { ...active, title: cachedTranslation.title, excerpt: cachedTranslation.excerpt, body: cachedTranslation.body }
-      : active;
+      : active && liveProgress && !cachedTranslation
+        ? {
+            ...active,
+            title: liveProgress.title ?? active.title,
+            excerpt: liveProgress.subtitle ?? active.excerpt,
+            body: liveProgress.body || active.body,
+          }
+        : active;
 
   // Categories present in the current source's articles, fixed taxonomy
   // order — same derivation as ArticlesView's filter row.
@@ -830,17 +855,55 @@ export function SharedView(props: {
                     {activeIsMuted ? <Volume2 size={15} /> : <VolumeX size={15} />}
                   </button>
                 ) : null}
+                <LanguagePicker
+                  value={targetLang}
+                  onChange={(lang) => {
+                    setTargetLang(lang);
+                    // Switching target language jumps straight to that
+                    // language's cached translation if one exists;
+                    // otherwise falls back to the original (mirrors
+                    // selectArticle's showTranslated reset above).
+                    setShowTranslated(getTranslation(active.id, lang) !== null);
+                  }}
+                  disabled={translatingId === active.id || !!liveProgress}
+                />
                 {needsTranslation && !cachedTranslation ? (
                   <button
                     type="button"
-                    class={`icon-btn${translatingId === active.id ? " loading" : ""}`}
-                    title={translatingId === active.id ? t("translate.translating") : t("translate.translate")}
-                    aria-label={translatingId === active.id ? t("translate.translating") : t("translate.translate")}
-                    disabled={translatingId === active.id}
+                    class={`icon-btn${translatingId === active.id || liveProgress ? " loading" : ""}`}
+                    title={
+                      translatingId === active.id || liveProgress
+                        ? t("translate.translating")
+                        : partialTranslation
+                          ? t("translate.resume")
+                          : t("translate.translate")
+                    }
+                    aria-label={
+                      translatingId === active.id || liveProgress
+                        ? t("translate.translating")
+                        : partialTranslation
+                          ? t("translate.resume")
+                          : t("translate.translate")
+                    }
+                    // Disabled both for this view's own in-flight request
+                    // (translatingId) and for a job started elsewhere on the
+                    // same article×locale (liveProgress) — see
+                    // ArticleReaderModal's identical guard.
+                    disabled={translatingId === active.id || !!liveProgress}
                     onClick={() => void handleTranslate(active)}
                   >
                     <Languages size={15} />
                   </button>
+                ) : null}
+                {liveProgress && !cachedTranslation ? (
+                  <span class="badge">
+                    {liveProgress.totalChunks > 0
+                      ? t("translate.translatingProgress", {
+                          done: String(liveProgress.doneChunks),
+                          total: String(liveProgress.totalChunks),
+                        })
+                      : t("translate.translating")}
+                  </span>
                 ) : null}
                 {cachedTranslation ? (
                   <button
@@ -854,7 +917,7 @@ export function SharedView(props: {
                   </button>
                 ) : null}
                 {showTranslated && cachedTranslation ? (
-                  <span class="badge">{t("translate.translatedBadge", { lang: LOCALE_LABELS[locale] })}</span>
+                  <span class="badge">{t("translate.translatedBadge", { lang: LOCALE_LABELS[targetLang] })}</span>
                 ) : null}
                 <a
                   class="shared-chat-link"
