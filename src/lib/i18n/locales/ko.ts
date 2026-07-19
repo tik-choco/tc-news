@@ -209,6 +209,10 @@ export const ko: Messages = {
     programRubyHint: "스튜디오에서 생성하는 대본의 한자 등에 후리가나(루비)를 표시합니다. 음성 낭독에는 영향을 주지 않습니다.",
     globalShareLabel: "글로벌에도 배포",
     globalShareDesc: "룸에 공유할 때, 모두가 참여하는 글로벌 룸에도 기사를 배포합니다.",
+    shareModeLabel: "기사 공유 모드",
+    shareModeDesc: "자동에서는 생성한 기사가 자동으로 룸에 공유됩니다. 설정은 언제든 변경할 수 있습니다.",
+    shareModeAuto: "자동(생성한 기사를 자동으로 공유)",
+    shareModeManual: "수동(공유 버튼을 눌렀을 때만 공유)",
     showMediaPreviews: "썸네일·링크 미리보기 표시",
     showMediaPreviewsHint: "피드나 출처 링크 페이지에서 OGP 정보(이미지·동영상)를 자동으로 가져와 표시합니다. 가져올 때 CORS 프록시를 사용할 수 있습니다.",
 
@@ -370,6 +374,9 @@ export const ko: Messages = {
     tourSharedDesc: "P2P 룸과 글로벌 배포를 통해 모두의 기사를 실시간으로 읽을 수 있습니다",
     tourSettingsTitle: "설정",
     tourSettingsDesc: "LLM 설정, AI Network, 언어와 테마를 변경할 수 있습니다",
+    tourShareTitle: "자동 공유",
+    tourShareDesc:
+      "기본적으로 생성한 기사는 자동으로 룸에 공유됩니다. 수동으로 바꾸고 싶다면 설정의 「기사 공유 모드」에서 언제든 변경할 수 있습니다.",
     tourOutro: "모든 설정은 자동으로 저장됩니다. 즐겁게 사용해 주세요!",
   },
 

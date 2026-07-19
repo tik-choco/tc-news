@@ -266,6 +266,27 @@ export function App() {
     saveAppSettings(next);
   }
 
+  // Publishes an article into the user's room (and, if globalShare is on, the
+  // global room too), then marks it shared in local storage. Shared by both
+  // the manual "共有" button (onShareToRoom below) and the shareMode:"auto"
+  // path off onArticleGenerated — kept in one place so the dual-room publish
+  // logic and the post-share state update can't drift between the two entry
+  // points.
+  async function shareArticleToRoom(article: NewsArticle): Promise<void> {
+    await share(article);
+    if (settings.globalShare && settings.roomId !== GLOBAL_ARTICLES_ROOM_ID) {
+      try {
+        await globalRoom.share(article);
+      } catch (err) {
+        // Room share already succeeded; the global re-publish is a
+        // best-effort extra and must not fail the user's action.
+        console.warn("tc-news: failed to publish article to global room", err);
+      }
+    }
+    upsertMyArticle({ ...article, shared: true });
+    setArticles(loadMyArticles());
+  }
+
   // Own-article translate: broadcast the result to whichever room(s) the
   // article was already shared to (mirrors ArticlesView's onShareToRoom dual
   // publish below). An article never shared anywhere has no room to
@@ -463,21 +484,16 @@ export function App() {
             onArticleGenerated={(article) => {
               upsertMyArticle(article);
               setArticles(loadMyArticles());
-            }}
-            onShareToRoom={async (article) => {
-              await share(article);
-              if (settings.globalShare && settings.roomId !== GLOBAL_ARTICLES_ROOM_ID) {
-                try {
-                  await globalRoom.share(article);
-                } catch (err) {
-                  // Room share already succeeded; the global re-publish is a
-                  // best-effort extra and must not fail the user's action.
-                  console.warn("tc-news: failed to publish article to global room", err);
-                }
+              if (settings.shareMode !== "manual") {
+                // Fire-and-forget: a disconnected/unreachable room must not
+                // break the generation flow, so failures are swallowed here
+                // (mirrors the best-effort global re-publish below).
+                shareArticleToRoom(article).catch((err) => {
+                  console.warn("tc-news: failed to auto-share generated article", err);
+                });
               }
-              upsertMyArticle({ ...article, shared: true });
-              setArticles(loadMyArticles());
             }}
+            onShareToRoom={(article) => shareArticleToRoom(article)}
             onShareToChat={(article) => publishArticleToChat(article)}
             onDeleteArticle={(id) => {
               deleteMyArticle(id);

@@ -215,6 +215,11 @@ export const es: Messages = {
     globalShareLabel: "Publicar también globalmente",
     globalShareDesc:
       "Al compartir en tu sala, también publica el artículo en la sala global que todos pueden leer.",
+    shareModeLabel: "Modo de compartir artículos",
+    shareModeDesc:
+      "En modo automático, los artículos generados se comparten en tu sala automáticamente. Puedes cambiar esto en cualquier momento.",
+    shareModeAuto: "Automático (comparte los artículos generados automáticamente)",
+    shareModeManual: "Manual (comparte solo al pulsar el botón de compartir)",
     showMediaPreviews: "Mostrar miniaturas y vistas previas de enlaces",
     showMediaPreviewsHint:
       "Obtiene y muestra automáticamente datos OGP (imágenes y vídeos) de las fuentes y las páginas de enlaces de origen. Puede usar el proxy CORS para obtenerlos.",
@@ -381,6 +386,9 @@ export const es: Messages = {
     tourSharedDesc: "Lee en tiempo real los artículos de todos a través de salas P2P y la difusión global",
     tourSettingsTitle: "Ajustes",
     tourSettingsDesc: "Cambia la configuración de LLM, la AI Network, el idioma y el tema",
+    tourShareTitle: "Compartir automático",
+    tourShareDesc:
+      "De forma predeterminada, los artículos generados se comparten en tu sala automáticamente. Si prefieres el modo manual, puedes cambiarlo en cualquier momento desde \"Modo de compartir artículos\" en Ajustes.",
     tourOutro: "Todos los ajustes se guardan automáticamente. ¡Que lo disfrutes!",
   },
 

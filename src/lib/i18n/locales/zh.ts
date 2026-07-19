@@ -208,6 +208,10 @@ export const zh: Messages = {
     programRubyHint: "为演播室生成的台词中的汉字等标注注音假名(振假名)。不影响朗读音频。",
     globalShareLabel: "同时发布到全局",
     globalShareDesc: "分享到房间时，同时将文章发布到所有人都能看到的全局房间。",
+    shareModeLabel: "文章共享模式",
+    shareModeDesc: "在自动模式下，生成的文章会自动分享到房间。此设置可以随时更改。",
+    shareModeAuto: "自动(自动分享生成的文章)",
+    shareModeManual: "手动(仅在点击分享按钮时分享)",
     showMediaPreviews: "显示缩略图和链接预览",
     showMediaPreviewsHint: "自动获取并显示订阅源或来源链接页面的 OGP 信息(图片、视频)。获取时可能会使用 CORS 代理。",
 
@@ -368,6 +372,9 @@ export const zh: Messages = {
     tourSharedDesc: "通过 P2P 房间和全局分发，实时阅读大家的文章",
     tourSettingsTitle: "设置",
     tourSettingsDesc: "可以修改 LLM 设置、AI Network、语言和主题",
+    tourShareTitle: "自动分享",
+    tourShareDesc:
+      "默认情况下，生成的文章会自动分享到房间。如果想改为手动，可以随时在设置的「文章共享模式」中更改。",
     tourOutro: "所有设置都会自动保存。祝你使用愉快!",
   },
 
