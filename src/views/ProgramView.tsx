@@ -41,7 +41,11 @@ import { addProgram, loadPrograms, removeProgram, upsertProgram } from "../lib/p
 import { subscribeKvHydrated } from "../lib/kvStore";
 import { generateProgram } from "../lib/programGenerate";
 import { translateProgram } from "../lib/programTranslate";
-import { getProgramTranslation, saveProgramTranslation } from "../lib/programTranslationStore";
+import {
+  getProgramTranslation,
+  saveProgramTranslation,
+  subscribeProgramTranslations,
+} from "../lib/programTranslationStore";
 import { clearTranslationProgress, publishTranslationProgress } from "../lib/translationProgress";
 import { useTranslationProgress } from "../hooks/useTranslationProgress";
 import { parseRuby } from "../lib/ruby";
@@ -118,13 +122,30 @@ export function ProgramView(props: {
   /** Shares + persists the given (own) program; resolves the stamped copy
    * (authorDid/authorName/shared set). Caller refreshes loadPrograms() after. */
   onShareProgram: (program: RadioProgram) => Promise<RadioProgram>;
+  /** Shares one program-translation (text, plus rendered audio if any) into
+   * the room(s) — used to contribute a translation for an already-shared
+   * program (see handleTranslateProgram/handleRenderTranslatedAudio below). */
+  onShareProgramTranslation: (
+    programId: string,
+    lang: Locale,
+    content: { title: string; segmentTexts: string[]; audioCids?: string[]; audioMime?: string; audioVoice?: string },
+  ) => Promise<void>;
   onReactToProgram: (programId: string, kind: ReactionKind) => Promise<void>;
   /** ランキング等からの深リンク: このidの番組(自分の/受信どちらでも)を選択する。 */
   deepLinkId?: string | null;
   /** 設定 programRuby — 台本生成時にルビ付与を指示する。 */
   rubyEnabled: boolean;
 }): JSX.Element {
-  const { articles, myDid, sharedPrograms, onShareProgram, onReactToProgram, deepLinkId, rubyEnabled } = props;
+  const {
+    articles,
+    myDid,
+    sharedPrograms,
+    onShareProgram,
+    onShareProgramTranslation,
+    onReactToProgram,
+    deepLinkId,
+    rubyEnabled,
+  } = props;
   const t = useT();
   const { locale } = useLocale();
 
@@ -229,10 +250,17 @@ export function ProgramView(props: {
   const isOwnProgram = selectedProgram ? programs.some((p) => p.id === selectedProgram.id) : false;
 
   // --- Script translation (lib/programTranslate.ts) ---------------------
-  // Local-only preview of the selected program's script (title + segment
-  // text) in another language — same rationale as feedTranslate.ts: never
-  // shared over P2P, just a per-viewer convenience. Once a translation is
-  // fully cached, playback follows the on-screen script too: rendered
+  // Preview of the selected program's script (title + segment text) in
+  // another language — same rationale as feedTranslate.ts: a per-viewer
+  // convenience so the same program×lang pair doesn't re-run the LLM every
+  // time the script pane re-renders. It's no longer *never* shared over P2P
+  // though (see programTranslationStore.ts's module header): once finished,
+  // a translation of an already-shared program is contributed to the room
+  // over the dedicated tc-news:program-translation wire so other viewers
+  // don't each have to re-translate the same program independently — it
+  // just never rides the tc-news:program wire itself (that wire serializes
+  // the whole untranslated RadioProgram). Once a translation is fully
+  // cached, playback follows the on-screen script too: rendered
   // translated audio (if the viewer made one, see handleRenderTranslatedAudio
   // below) plays if present, else live TTS speaks the translated text in a
   // target-language voice — see displayProgram below. Only while a
@@ -258,6 +286,16 @@ export function ProgramView(props: {
     setTranslateError(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedProgram?.id]);
+
+  // cachedProgramTranslation below is read fresh on every render rather than
+  // held in state, so a translation that lands in the store *without* one of
+  // this view's own setState calls — i.e. hydrated from a P2P
+  // tc-news:program-translation wire while this view is open, or an audio
+  // upgrade saved by another tab — wouldn't otherwise trigger a re-render.
+  // Bump a counter on every store write (local or wire-hydrated) so the view
+  // re-reads it.
+  const [, bumpTranslationVersion] = useState(0);
+  useEffect(() => subscribeProgramTranslations(() => bumpTranslationVersion((v) => v + 1)), []);
 
   // Not stateful — re-read on every render, same idiom as
   // ArticleReaderModal's cachedTranslation.
@@ -552,6 +590,20 @@ export function ProgramView(props: {
               segmentTexts: content.segmentTexts,
               translatedAt: Date.now(),
             });
+            // Mirrors app.tsx's handleTranslateSharedArticle: any viewer of
+            // an already-shared program may contribute a translation to the
+            // room, so the next viewer doesn't have to re-pay the LLM for the
+            // same program×lang. Fire-and-forget — a share failure must
+            // never fail (or roll back) the translation job itself, since
+            // the translation is already safely cached locally above.
+            if (program.shared) {
+              onShareProgramTranslation(program.id, lang, {
+                title: content.title,
+                segmentTexts: content.segmentTexts,
+              }).catch((err) => {
+                console.warn("tc-news: failed to share program translation", err);
+              });
+            }
           } finally {
             // The job (and its onProgress emits) can outlive this view being
             // scrolled away from — always drop the live-progress entry on
@@ -652,21 +704,22 @@ export function ProgramView(props: {
     }
   }
 
-  // Renders audio for the *translated* script (lang-scoped, local-only —
-  // see programTranslationStore.ts's module header). Mirrors
-  // handleRenderAudio above but: (1) doesn't require isOwnProgram — a
-  // translated rendering is a per-viewer convenience that's never shared
-  // over P2P, so it's just as usable for a received program as for one's
-  // own; (2) state/errors are keyed by `${program.id}::${lang}` rather than
+  // Renders audio for the *translated* script (lang-scoped — see
+  // programTranslationStore.ts's module header). Mirrors handleRenderAudio
+  // above but: (1) doesn't require isOwnProgram — rendering a translation's
+  // audio is a per-viewer convenience usable for a received program just as
+  // much as one's own (only *sharing* it back, below, needs program.shared);
+  // (2) state/errors are keyed by `${program.id}::${lang}` rather than
   // program.id alone, so a translated render never clobbers (or gets
   // clobbered by) an in-flight/completed original-language render for the
   // same program; (3) the storage id passed to renderProgramAudio is
   // `${program.id}.${lang}` for the same reason (distinct object keys per
   // language); (4) the result is saved into programTranslationStore via
-  // saveProgramTranslation, never onto the program itself — upsertProgram
-  // is intentionally never called here, since a RadioProgram's audioCids
-  // ride the tc-news:program P2P wire whole-JSON, and translated audio must
-  // never leak out that way.
+  // saveProgramTranslation, never onto the program itself — upsertProgram is
+  // intentionally never called here, since a RadioProgram's audioCids ride
+  // the tc-news:program P2P wire whole-JSON, and translated audio must never
+  // leak out that way. It can still reach peers, just over the dedicated
+  // tc-news:program-translation wire instead (see the share call below).
   //
   // `lang` is captured as a plain parameter at click time (like
   // handleTranslateProgram above) rather than re-read from targetLang state
@@ -712,6 +765,23 @@ export function ProgramView(props: {
       // 消さないため(handleTranslateProgramの再翻訳と競合した場合の保険)。
       const latest = getProgramTranslation(program.id, lang) ?? tr;
       saveProgramTranslation({ ...latest, audioCids, audioMime, audioVoice: openaiVoice });
+      // "Audio upgrade" re-share: if the program is shared, ship the full
+      // record (text + the audio we just rendered) so peers' hydrate logic
+      // can upgrade an existing text-only translation with audio instead of
+      // everyone rendering their own copy. Fire-and-forget, same rationale
+      // as handleTranslateProgram above — must never fail/undo the render,
+      // which already succeeded and is safely cached locally.
+      if (program.shared) {
+        onShareProgramTranslation(program.id, lang, {
+          title: latest.title,
+          segmentTexts: latest.segmentTexts,
+          audioCids,
+          audioMime,
+          audioVoice: openaiVoice,
+        }).catch((err) => {
+          console.warn("tc-news: failed to share program translation audio", err);
+        });
+      }
     } catch (err) {
       // キャンセルはユーザー操作の結果であってエラーではないので表示しない。
       if (!isCancelError(err)) {
@@ -989,9 +1059,11 @@ export function ProgramView(props: {
                     <Volume2 size={12} /> {t("program.audioBadge")}
                   </span>
                 ) : null}
-                {/* 「音声を作成」: 翻訳表示中はisOwnProgramを問わない(翻訳音声は
-                    ローカル専用のviewer側の利便性であってP2P共有物ではないため、
-                    受信番組でも自分の端末向けに作ってよい)。原文表示中は従来通り
+                {/* 「音声を作成」: 翻訳表示中はisOwnProgramを問わない(翻訳音声の
+                    レンダリング自体はローカルのviewer側の利便性であり、受信番組
+                    でも自分の端末向けに作ってよい。番組がshared済みなら結果は
+                    tc-news:program-translationワイヤで自動的に共有もされるが、
+                    それはrenderできるかどうかとは無関係)。原文表示中は従来通り
                     isOwnProgramのみ。 */}
                 {(
                   showingCachedProgramTranslation
@@ -1071,9 +1143,14 @@ export function ProgramView(props: {
             ) : null}
             {translateError ? <p class="program-generate-error">{translateError}</p> : null}
             {/* "render before sharing" nudge only makes sense for the
-                original script — translated audio is local-only and never
-                rides the share wire, so it never applies while a translated
-                variant is on screen. */}
+                original script — it's about audioCids riding the same
+                tc-news:program wire as the program share itself, so
+                rendering first avoids a second publish. Translated audio
+                doesn't work that way: it rides its own dedicated
+                tc-news:program-translation wire and is shared automatically
+                right after rendering (see handleRenderTranslatedAudio), not
+                bundled into a manual "share program" click — so the nudge
+                never applies while a translated variant is on screen. */}
             {!showingCachedProgramTranslation && isOwnProgram && engine === "openai" && !selectedProgram.shared && !hasAudio ? (
               <p class="program-section-hint">{t("program.renderAudioHint")}</p>
             ) : null}

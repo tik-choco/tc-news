@@ -33,6 +33,7 @@ import { markOnboardingDone, shouldShowOnboarding, subscribeOnboardingRequests }
 import { connectNetworkConsumer } from "./lib/network";
 import { loadMyArticles, upsertMyArticle, deleteMyArticle, saveSharedArticle } from "./lib/articleStore";
 import { upsertProgram } from "./lib/programStore";
+import { listProgramTranslations } from "./lib/programTranslationStore";
 import { initKvStore, subscribeKvHydrated } from "./lib/kvStore";
 import { GLOBAL_ARTICLES_ROOM_ID, cleanupOrphanedRoomKeys } from "./lib/newsWire";
 import { forwardArticleToGlobal } from "./lib/globalArticlesReader";
@@ -158,6 +159,7 @@ export function App() {
     share,
     shareTranslation,
     shareProgram,
+    shareProgramTranslation,
     sendReaction,
     shareFeed,
     connected,
@@ -416,6 +418,30 @@ export function App() {
     });
   }
 
+  // Publishes one program-translation into the user's room (and, if
+  // globalShare is on, the global room too) — the same dual-room pattern as
+  // shareArticleToRoom/handleTranslateOwnArticle above. Shared by the
+  // onShareProgramTranslation prop below (any viewer sharing a translation
+  // they just produced) and by onShareProgram's own re-share of already-
+  // cached translations, so the two entry points can't drift apart.
+  async function shareProgramTranslationToRoom(
+    programId: string,
+    lang: string,
+    content: { title: string; segmentTexts: string[]; audioCids?: string[]; audioMime?: string; audioVoice?: string },
+  ) {
+    const record = await shareProgramTranslation(programId, lang, content);
+    if (settings.globalShare && settings.roomId !== GLOBAL_ARTICLES_ROOM_ID) {
+      try {
+        await globalRoom.shareProgramTranslation(programId, lang, content);
+      } catch (err) {
+        // Room share already succeeded; the global re-publish is a
+        // best-effort extra and must not fail the caller's action.
+        console.warn("tc-news: failed to publish program translation to global room", err);
+      }
+    }
+    return record;
+  }
+
   return (
     <div class="app-shell">
       <header class="app-header">
@@ -568,7 +594,33 @@ export function App() {
                 }
               }
               upsertProgram(stamped);
+              // Sharing a program also re-ships any translations already
+              // cached for it (lib/programTranslationStore) — so receivers
+              // get multi-language text (and rendered audio, if any) right
+              // away instead of every viewer re-translating the same program
+              // independently. Best-effort per language: one failed
+              // translation re-share must not fail the program share itself.
+              for (const translation of listProgramTranslations(stamped.id)) {
+                try {
+                  await shareProgramTranslationToRoom(stamped.id, translation.lang, {
+                    title: translation.title,
+                    segmentTexts: translation.segmentTexts,
+                    audioCids: translation.audioCids,
+                    audioMime: translation.audioMime,
+                    audioVoice: translation.audioVoice,
+                  });
+                } catch (err) {
+                  console.warn("tc-news: failed to publish cached program translation to room", err);
+                }
+              }
               return stamped;
+            }}
+            onShareProgramTranslation={async (
+              programId: string,
+              lang: Locale,
+              content: { title: string; segmentTexts: string[]; audioCids?: string[]; audioMime?: string; audioVoice?: string },
+            ) => {
+              await shareProgramTranslationToRoom(programId, lang, content);
             }}
             onReactToProgram={async (programId: string, kind: ReactionKind) => {
               // Program reactions go to both rooms so tallies converge no
