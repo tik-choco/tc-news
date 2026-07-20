@@ -15,7 +15,16 @@
 // mirror loadSharedArticles / saveSharedArticles) and, like reactions, get
 // their own replay log (loadProgramLog/appendProgramLog) so shared programs
 // reach late joiners without competing with article wires for replay-window
-// slots. tc-news:feed-share (FeedShareWire) follows the same signed-envelope
+// slots. tc-news:program-translation (ProgramTranslationWire) follows the
+// exact same signed-envelope + CID + dedicated-replay-log pattern as
+// TranslationWire/ProgramWire above (programTranslationStore.ts remains the
+// local read-through cache; this wire is how a translation — text + already
+// content-addressed translated-audio CIDs — travels between peers): its
+// payload (ProgramTranslationContent) is content-addressed via storage_add
+// like everything else here, and it gets its own replay log
+// (loadProgramTranslationLog/appendProgramTranslationLog) for the same
+// anti-eviction reason as reactions/programs/feed-shares. tc-news:feed-share
+// (FeedShareWire) follows the same signed-envelope
 // shape too, but unlike articles/programs it carries its full payload (url +
 // label) inline rather than a CID — both fields are small enough that
 // content-addressing them would just add a storage_add/storage_get round trip
@@ -125,6 +134,40 @@ export interface ProgramWire extends Record<string, unknown> {
 }
 
 /**
+ * 番組の翻訳結果(テキスト+レンダー済み翻訳音声のCID)を1件配信するワイヤ。
+ * TranslationWireと同じく programId×lang ごとに1件が想定値だが、複数ピアが
+ * 同時に翻訳して先着順にならないケースはあり得るため、受信側は「まだ持って
+ * いなければ採用」でデデュープする(hooks/useNewsRoom.tsのhydrateTranslationと
+ * 同じ方針)。翻訳音声は既にProgramView側でstorage_add済み(mistlibのCAS)なので
+ * ここではCIDだけが運ばれる(ProgramTranslationContent.audioCids参照)。
+ */
+export interface ProgramTranslationWire extends Record<string, unknown> {
+  type: "tc-news:program-translation";
+  id: string; // 翻訳レコードの一意id(program.id ではない)
+  programId: string; // RadioProgram.id
+  lang: string; // 翻訳先ロケール(lib/i18n の Locale値)
+  fromId: string; // 翻訳者DID
+  fromName: string;
+  timestamp: number;
+  cid: string; // ProgramTranslationContent全体のJSONのCID
+  signature: string;
+  fromApp?: string;
+}
+
+/** ProgramTranslationWire.cid が指す本体。 */
+export interface ProgramTranslationContent extends Record<string, unknown> {
+  programId: string;
+  lang: string;
+  title: string;
+  // 番組のsegmentsと同じ長さ・順序。
+  segmentTexts: string[];
+  // segmentTextsと同じ長さ・順序のmistlibストレージCID群(storage_get向け)。
+  audioCids?: string[];
+  audioMime?: string;
+  audioVoice?: string;
+}
+
+/**
  * フィードURLをP2P共有するワイヤ。url/labelはCID化するには小さすぎるため、
  * ArticleWire/ProgramWireと違い本体をそのままワイヤに載せる(署名対象にも
  * url/labelを含む — wireSign.tsのsignWireFields/verifyWireはsignatureを除く
@@ -149,12 +192,14 @@ const WIRE_LOG_KEY_PREFIX = "tc-news:wirelog:";
 const SHARED_PROGRAMS_KEY_PREFIX = "tc-news:shared-programs:";
 const REACTION_LOG_KEY_PREFIX = "tc-news:reactionlog:";
 const PROGRAM_LOG_KEY_PREFIX = "tc-news:programlog:";
+const PROGRAM_TRANSLATION_LOG_KEY_PREFIX = "tc-news:programtranslationlog:";
 const FEED_SHARE_LOG_KEY_PREFIX = "tc-news:feedlog:";
 export const MAX_SHARED_ARTICLES = 200;
 const MAX_WIRE_LOG = 300;
 export const MAX_SHARED_PROGRAMS = 100;
 const MAX_REACTION_LOG = 1000;
 const MAX_PROGRAM_LOG = 100;
+const MAX_PROGRAM_TRANSLATION_LOG = 100;
 const MAX_FEED_SHARE_LOG = 200;
 
 export function newTranslationWireId(): string {
@@ -162,6 +207,14 @@ export function newTranslationWireId(): string {
     return crypto.randomUUID();
   } catch {
     return `translation-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  }
+}
+
+export function newProgramTranslationWireId(): string {
+  try {
+    return crypto.randomUUID();
+  } catch {
+    return `program-translation-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   }
 }
 
@@ -284,6 +337,49 @@ export function sanitizeSharedProgram(value: unknown): RadioProgram | null {
   return program;
 }
 
+/**
+ * 受信した番組翻訳JSON(ProgramTranslationWire.cidの中身)を検証・変換する。
+ * sanitizeSharedProgramと同じ防御的パース方針: 必須フィールドが欠けていれば
+ * null、segmentTextsは1件も無ければnull(空の翻訳は共有不可)。
+ */
+export function sanitizeProgramTranslationContent(value: unknown): ProgramTranslationContent | null {
+  if (!value || typeof value !== "object") return null;
+  const v = value as Record<string, unknown>;
+  if (typeof v.programId !== "string" || !v.programId) return null;
+  if (typeof v.lang !== "string" || !v.lang) return null;
+  if (typeof v.title !== "string") return null;
+  const segmentTexts = Array.isArray(v.segmentTexts)
+    ? v.segmentTexts.filter((t): t is string => typeof t === "string")
+    : [];
+  if (segmentTexts.length === 0) return null;
+  const segmentTextsIntact = Array.isArray(v.segmentTexts) && segmentTexts.length === v.segmentTexts.length;
+  const content: ProgramTranslationContent = {
+    programId: v.programId,
+    lang: v.lang,
+    title: v.title,
+    segmentTexts,
+  };
+
+  // audioCidsはsegmentTextsとインデックス対応するため、生のsegmentTexts配列が
+  // 1件でも間引かれていたら対応がずれる。また audioCids 自体も全要素が非空
+  // 文字列でsegmentTextsと同じ長さである必要がある。条件を満たさなければ翻訳
+  // 自体は保持しつつ音声フィールドごと破棄する(sanitizeSharedProgramと同じ方針)。
+  const rawAudioCids = Array.isArray(v.audioCids) ? v.audioCids : null;
+  const audioCidsAllStrings =
+    rawAudioCids !== null && rawAudioCids.every((c): c is string => typeof c === "string" && c.length > 0);
+  if (
+    segmentTextsIntact &&
+    rawAudioCids &&
+    audioCidsAllStrings &&
+    rawAudioCids.length === segmentTexts.length
+  ) {
+    content.audioCids = rawAudioCids;
+    content.audioMime = typeof v.audioMime === "string" && v.audioMime ? v.audioMime : "audio/mpeg";
+    if (typeof v.audioVoice === "string" && v.audioVoice) content.audioVoice = v.audioVoice;
+  }
+  return content;
+}
+
 export async function loadSharedPrograms(roomId: string): Promise<RadioProgram[]> {
   try {
     const raw = await kvGetOrMigrate(SHARED_PROGRAMS_KEY_PREFIX + roomId);
@@ -365,6 +461,23 @@ function isTranslationWire(value: unknown): value is TranslationWire {
     v.type === "tc-news:translation" &&
     typeof v.id === "string" &&
     typeof v.articleId === "string" &&
+    typeof v.lang === "string" &&
+    typeof v.fromId === "string" &&
+    typeof v.fromName === "string" &&
+    typeof v.timestamp === "number" &&
+    typeof v.cid === "string" &&
+    typeof v.signature === "string" &&
+    (v.fromApp === undefined || typeof v.fromApp === "string")
+  );
+}
+
+export function isProgramTranslationWire(value: unknown): value is ProgramTranslationWire {
+  if (!value || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  return (
+    v.type === "tc-news:program-translation" &&
+    typeof v.id === "string" &&
+    typeof v.programId === "string" &&
     typeof v.lang === "string" &&
     typeof v.fromId === "string" &&
     typeof v.fromName === "string" &&
@@ -496,6 +609,32 @@ export function appendProgramLog(roomId: string, wire: ProgramWire): void {
   const next = [...log, wire];
   const trimmed = next.length > MAX_PROGRAM_LOG ? next.slice(next.length - MAX_PROGRAM_LOG) : next;
   safeSetItem(PROGRAM_LOG_KEY_PREFIX + roomId, JSON.stringify(trimmed));
+}
+
+/**
+ * 番組翻訳ワイヤの履歴ログ(新規参加者へのリプレイ用)。番組ワイヤと同じ理由で
+ * 専用キーに保持する — 混ぜると翻訳の連投が番組/記事ワイヤをリプレイ窓から
+ * 押し出し得る(ヘッダコメント参照)。
+ */
+export function loadProgramTranslationLog(roomId: string): ProgramTranslationWire[] {
+  try {
+    const raw = localStorage.getItem(PROGRAM_TRANSLATION_LOG_KEY_PREFIX + roomId);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(isProgramTranslationWire);
+  } catch {
+    return [];
+  }
+}
+
+/** 番組翻訳ワイヤをwire idでデデュープして記録する(上限件数で切り詰め)。 */
+export function appendProgramTranslationLog(roomId: string, wire: ProgramTranslationWire): void {
+  const log = loadProgramTranslationLog(roomId);
+  if (log.some((w) => w.id === wire.id)) return;
+  const next = [...log, wire];
+  const trimmed = next.length > MAX_PROGRAM_TRANSLATION_LOG ? next.slice(next.length - MAX_PROGRAM_TRANSLATION_LOG) : next;
+  safeSetItem(PROGRAM_TRANSLATION_LOG_KEY_PREFIX + roomId, JSON.stringify(trimmed));
 }
 
 /**

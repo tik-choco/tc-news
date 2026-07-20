@@ -1,15 +1,22 @@
 // Local read-through cache for translated RadioProgram scripts, keyed by
 // programId×lang. Same local-only rationale as feedTranslationStore.ts: a
 // program translation (lib/programTranslate.ts) is a convenience for the
-// viewer of one program, never shared over P2P, so it's never persisted to
-// or read from the room — the same programId×lang pair just doesn't re-run
-// the LLM every time the script pane re-renders. Same defensive-parsing +
-// kvStore persistence pattern as feedTranslationStore.ts, plus the
-// byte-level safety net from partialFeedTranslationStore.ts's persistAll
-// (a program script's segment count isn't bounded the same way a single
-// feed item's HTML is, so entry count alone doesn't cap serialized size).
-// Persisted via kvStore (mist KV, OPFS-backed; localStorage only as a
-// pre-hydration/fallback path — see kvStore.ts's module header).
+// viewer of one program, so the same programId×lang pair just doesn't re-run
+// the LLM every time the script pane re-renders. Unlike before, a translation
+// is no longer *never* shared over P2P — it can now ride the dedicated
+// tc-news:program-translation wire (see lib/newsWire.ts's ProgramTranslationWire
+// / ProgramTranslationContent) so peers don't each have to re-translate the
+// same program independently. This store stays the local read-through cache
+// either way: a translation received over P2P is written here just like one
+// produced locally, so callers keep reading through one place regardless of
+// origin (see translatorDid/translatorName below for provenance of P2P-
+// sourced entries). Same defensive-parsing + kvStore persistence pattern as
+// feedTranslationStore.ts, plus the byte-level safety net from
+// partialFeedTranslationStore.ts's persistAll (a program script's segment
+// count isn't bounded the same way a single feed item's HTML is, so entry
+// count alone doesn't cap serialized size). Persisted via kvStore (mist KV,
+// OPFS-backed; localStorage only as a pre-hydration/fallback path — see
+// kvStore.ts's module header).
 
 import { KV_VALUE_SOFT_LIMIT_BYTES, kvGetSync, kvSetSync, utf8ByteLength } from "./kvStore";
 
@@ -25,14 +32,21 @@ export interface ProgramTranslation {
   translatedAt: number; // epoch ms
   // Viewer-rendered audio for the *translated* script, mirroring
   // RadioProgram.audioCids/audioMime/audioVoice but living here instead of
-  // on the program: translated audio is as local-only as the translated
-  // text itself, so it must never ride the tc-news:program wire (which
-  // serializes the whole RadioProgram, audio CIDs included). Absent until
-  // the viewer renders it via ProgramView's audio button on the translated
+  // on the program: it must never ride the tc-news:program wire (which
+  // serializes the whole RadioProgram, audio CIDs included) — but it can
+  // now ride the dedicated tc-news:program-translation wire (see
+  // lib/newsWire.ts) since that CID is already content-addressed via
+  // mistlib storage_add, so only the CID needs to travel. Absent until the
+  // viewer renders it via ProgramView's audio button on the translated
   // variant. Same length/order as segmentTexts.
   audioCids?: string[];
   audioMime?: string;
   audioVoice?: string; // OpenAI voice id used at render time (display only)
+  // Set when this translation arrived over P2P (tc-news:program-translation)
+  // or when we shared ours — the DID/display name of the translator, for
+  // attribution. Undefined for purely-local, never-shared translations.
+  translatorDid?: string;
+  translatorName?: string;
 }
 
 function cacheKey(programId: string, lang: string): string {
@@ -54,7 +68,9 @@ function isProgramTranslation(value: unknown): value is ProgramTranslation {
     typeof v.translatedAt === "number" &&
     (v.audioCids === undefined || isStringArray(v.audioCids)) &&
     (v.audioMime === undefined || typeof v.audioMime === "string") &&
-    (v.audioVoice === undefined || typeof v.audioVoice === "string")
+    (v.audioVoice === undefined || typeof v.audioVoice === "string") &&
+    (v.translatorDid === undefined || typeof v.translatorDid === "string") &&
+    (v.translatorName === undefined || typeof v.translatorName === "string")
   );
 }
 
@@ -69,6 +85,8 @@ function coerceProgramTranslation(value: unknown): ProgramTranslation | null {
     audioCids: value.audioCids,
     audioMime: value.audioMime,
     audioVoice: value.audioVoice,
+    translatorDid: value.translatorDid,
+    translatorName: value.translatorName,
   };
 }
 
@@ -111,6 +129,37 @@ export function getProgramTranslation(programId: string, lang: string): ProgramT
 }
 
 /**
+ * 指定した番組のキャッシュ済み翻訳を言語問わず全件返す(番組共有時に既存の
+ * 翻訳もあわせて共有するために使う)。
+ */
+export function listProgramTranslations(programId: string): ProgramTranslation[] {
+  return Object.values(loadAll()).filter((t) => t.programId === programId);
+}
+
+const listeners = new Set<() => void>();
+
+/**
+ * 翻訳の保存(ローカル生成・P2P受信いずれも)を購読する。ProgramViewが表示中に
+ * P2P経由の翻訳が届いた場合にストアを再読込するためのフック。戻り値は購読解除。
+ */
+export function subscribeProgramTranslations(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+function notifyProgramTranslationListeners(): void {
+  for (const listener of listeners) {
+    try {
+      listener();
+    } catch {
+      // A misbehaving listener shouldn't block the others from being notified.
+    }
+  }
+}
+
+/**
  * 翻訳を保存する。上限件数を超えたら古いエントリ(translatedAtが古い順)から間引く。
  */
 export function saveProgramTranslation(record: ProgramTranslation): void {
@@ -123,4 +172,5 @@ export function saveProgramTranslation(record: ProgramTranslation): void {
   } else {
     persistAll(all);
   }
+  notifyProgramTranslationListeners();
 }

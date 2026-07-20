@@ -19,13 +19,16 @@ import { signWireFields, verifyWire } from "../lib/wireSign";
 import {
   appendFeedShareLog,
   appendProgramLog,
+  appendProgramTranslationLog,
   appendReactionLog,
   appendWireLog,
   isFeedShareWire,
+  isProgramTranslationWire,
   isProgramWire,
   isReactionWire,
   loadFeedShareLog,
   loadProgramLog,
+  loadProgramTranslationLog,
   loadReactionLog,
   loadSharedArticles,
   loadSharedPrograms,
@@ -33,19 +36,27 @@ import {
   MAX_SHARED_ARTICLES,
   MAX_SHARED_PROGRAMS,
   newFeedShareWireId,
+  newProgramTranslationWireId,
   newReactionWireId,
   newTranslationWireId,
+  sanitizeProgramTranslationContent,
   sanitizeSharedProgram,
   saveSharedArticles,
   saveSharedPrograms,
   type ArticleWire,
   type FeedShareWire,
   type HistoryRequestWire,
+  type ProgramTranslationWire,
   type ProgramWire,
   type ReactionWire,
   type TranslationWire,
 } from "../lib/newsWire";
 import { addReaction } from "../lib/reactionStore";
+import {
+  getProgramTranslation,
+  saveProgramTranslation,
+  type ProgramTranslation,
+} from "../lib/programTranslationStore";
 import { getTranslation, saveTranslation, type ArticleTranslation } from "../lib/translationStore";
 import { REACTION_KINDS, type NewsArticle, type RadioProgram, type ReactionKind } from "../types";
 
@@ -344,6 +355,53 @@ export function useNewsRoom(roomId: string, userName: string, enabled = true) {
       }
     }
 
+    // Program-translation wires mirror hydrateTranslation's CID fetch +
+    // programId/lang cross-check, but the accept policy differs slightly:
+    // unlike article translations (one-shot text), a program translation can
+    // legitimately arrive twice — once text-only, once with audio added as a
+    // later upgrade (ProgramView renders translated audio lazily, after the
+    // text translation already exists and may already have been shared). So
+    // this accepts either (a) we don't have a local record yet, or (b) our
+    // local record has no audio yet and the incoming content does — an audio
+    // upgrade of what we already have. Any other case (we already have text
+    // and/or audio) is a no-op, keeping the dedup local-first like the other
+    // hydrators. The store itself is NOT room-scoped (programTranslationStore
+    // is a global local cache keyed programId×lang, same value regardless of
+    // which room it arrived from), but the replay log is room-scoped just
+    // like the program log (appendProgramTranslationLog/
+    // loadProgramTranslationLog below).
+    async function hydrateProgramTranslation(wire: ProgramTranslationWire) {
+      try {
+        if (!(await verifyWire(wire))) {
+          console.warn("discarding program-translation wire with invalid signature", wire.id);
+          return;
+        }
+        appendProgramTranslationLog(roomId, wire);
+        const bytes = await storage_get(wire.cid);
+        if (cancelled) return;
+        const candidate = sanitizeProgramTranslationContent(JSON.parse(new TextDecoder().decode(bytes)));
+        if (!candidate) return;
+        if (candidate.programId !== wire.programId || candidate.lang !== wire.lang) return;
+        const existing = getProgramTranslation(wire.programId, wire.lang);
+        const isAudioUpgrade = !!existing && !existing.audioCids && !!candidate.audioCids;
+        if (existing && !isAudioUpgrade) return; // already have an equal-or-better local record
+        saveProgramTranslation({
+          programId: wire.programId,
+          lang: wire.lang,
+          title: candidate.title,
+          segmentTexts: candidate.segmentTexts,
+          audioCids: candidate.audioCids,
+          audioMime: candidate.audioMime,
+          audioVoice: candidate.audioVoice,
+          translatedAt: wire.timestamp,
+          translatorDid: wire.fromId,
+          translatorName: wire.fromName,
+        });
+      } catch (err) {
+        console.error("failed to hydrate program translation", err);
+      }
+    }
+
     // Like reactions, feed-share wires carry no CID — the wire *is* the
     // payload, so there's no storage_get hop and no authorDid cross-check
     // (there's nothing to cross-check against; url/label just travel signed).
@@ -410,15 +468,21 @@ export function useNewsRoom(roomId: string, userName: string, enabled = true) {
       // log and reaction log so none of the three bursts onto the link at
       // once.
       const programLog = loadProgramLog(roomId);
+      // Program-translation wires also live in their own log (see
+      // hydrateProgramTranslation above) and ride the same staggered replay,
+      // continuing after the wire/reaction/program logs so none of the five
+      // bursts onto the link at once.
+      const programTranslationLog = loadProgramTranslationLog(roomId);
       // Feed-share wires also live in their own log (see hydrateFeedShare
       // above) and ride the same staggered replay, continuing after the wire/
-      // reaction/program logs so none of the four bursts onto the link at
-      // once.
+      // reaction/program/program-translation logs so none of the five bursts
+      // onto the link at once.
       const feedShareLog = loadFeedShareLog(roomId);
       if (
         log.length === 0 &&
         reactionLog.length === 0 &&
         programLog.length === 0 &&
+        programTranslationLog.length === 0 &&
         feedShareLog.length === 0
       )
         return;
@@ -441,11 +505,17 @@ export function useNewsRoom(roomId: string, userName: string, enabled = true) {
             node.sendMessage(requesterId, wire, DELIVERY_RELIABLE, channelId);
           }, (log.length + reactionLog.length + index) * REPLAY_STAGGER_MS);
         });
-        feedShareLog.forEach((wire, index) => {
+        programTranslationLog.forEach((wire, index) => {
           setTimeout(() => {
             if (cancelled) return;
             node.sendMessage(requesterId, wire, DELIVERY_RELIABLE, channelId);
           }, (log.length + reactionLog.length + programLog.length + index) * REPLAY_STAGGER_MS);
+        });
+        feedShareLog.forEach((wire, index) => {
+          setTimeout(() => {
+            if (cancelled) return;
+            node.sendMessage(requesterId, wire, DELIVERY_RELIABLE, channelId);
+          }, (log.length + reactionLog.length + programLog.length + programTranslationLog.length + index) * REPLAY_STAGGER_MS);
         });
       });
     }
@@ -461,6 +531,8 @@ export function useNewsRoom(roomId: string, userName: string, enabled = true) {
           hydrateTranslation(decoded);
         } else if (isProgramWire(decoded)) {
           hydrateProgram(decoded);
+        } else if (isProgramTranslationWire(decoded)) {
+          hydrateProgramTranslation(decoded);
         } else if (isReactionWire(decoded)) {
           hydrateReaction(decoded);
         } else if (isFeedShareWire(decoded)) {
@@ -664,6 +736,56 @@ export function useNewsRoom(roomId: string, userName: string, enabled = true) {
     return stamped;
   }
 
+  // Mirrors shareTranslation(): the translation content (text + already
+  // content-addressed translated-audio CIDs, see ProgramTranslationContent)
+  // is stored via storage_add and only the CID + metadata travel on the
+  // signed wire. Appended to the dedicated programTranslationLog (symmetric
+  // with shareProgram's appendProgramLog) so late joiners receive it too, and
+  // saved to the local (non-room-scoped) programTranslationStore so the
+  // sender's own UI reflects it without waiting for an echo.
+  async function shareProgramTranslation(
+    programId: string,
+    lang: string,
+    content: { title: string; segmentTexts: string[]; audioCids?: string[]; audioMime?: string; audioVoice?: string },
+  ): Promise<ProgramTranslation> {
+    const node = await getNode();
+    const identity = await ensureDidIdentity();
+    const cid = await storage_add(
+      `${programId}.${lang}.program-translation.json`,
+      new TextEncoder().encode(JSON.stringify({ programId, lang, ...content })),
+    );
+    const unsigned = {
+      type: "tc-news:program-translation" as const,
+      id: newProgramTranslationWireId(),
+      programId,
+      lang,
+      fromId: identity.did,
+      fromName: userNameRef.current,
+      timestamp: Date.now(),
+      cid,
+      fromApp: "tc-news",
+    };
+    const wire: ProgramTranslationWire = { ...unsigned, signature: await signWireFields(unsigned) };
+    node.sendMessage(null, wire, DELIVERY_RELIABLE, roomIdRef.current);
+    appendProgramTranslationLog(roomIdRef.current, wire);
+    // Unlike saveTranslation (translationStore.ts), saveProgramTranslation
+    // returns void — build the record here, save it, and return it ourselves.
+    const record: ProgramTranslation = {
+      programId,
+      lang,
+      title: content.title,
+      segmentTexts: content.segmentTexts,
+      audioCids: content.audioCids,
+      audioMime: content.audioMime,
+      audioVoice: content.audioVoice,
+      translatedAt: wire.timestamp,
+      translatorDid: identity.did,
+      translatorName: userNameRef.current,
+    };
+    saveProgramTranslation(record);
+    return record;
+  }
+
   // A reaction wire is self-contained (no CID hop). It goes on the wire, into
   // the room's reaction replay log, and straight into the local reactionStore
   // so the sender's own UI tally updates without waiting for an echo.
@@ -730,6 +852,7 @@ export function useNewsRoom(roomId: string, userName: string, enabled = true) {
     share,
     shareTranslation,
     shareProgram,
+    shareProgramTranslation,
     sendReaction,
     shareFeed,
     connected,

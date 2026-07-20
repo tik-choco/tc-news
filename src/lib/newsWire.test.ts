@@ -2,17 +2,21 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   appendFeedShareLog,
   appendProgramLog,
+  appendProgramTranslationLog,
   cleanupOrphanedRoomKeys,
   isFeedShareWire,
+  isProgramTranslationWire,
   loadFeedShareLog,
   loadProgramLog,
+  loadProgramTranslationLog,
   loadSharedArticles,
   loadSharedPrograms,
+  sanitizeProgramTranslationContent,
   sanitizeSharedProgram,
   saveSharedArticles,
   saveSharedPrograms,
 } from "./newsWire";
-import type { FeedShareWire, ProgramWire } from "./newsWire";
+import type { FeedShareWire, ProgramTranslationWire, ProgramWire } from "./newsWire";
 import type { NewsArticle, RadioProgram } from "../types";
 import { resetKvStoreForTests } from "./kvStore";
 
@@ -455,5 +459,318 @@ describe("loadFeedShareLog / appendFeedShareLog", () => {
     appendFeedShareLog("room-b", makeFeedShareWire({ id: "b-1" }));
     expect(loadFeedShareLog("room-a").map((w) => w.id)).toEqual(["a-1"]);
     expect(loadFeedShareLog("room-b").map((w) => w.id)).toEqual(["b-1"]);
+  });
+});
+
+function makeProgramTranslationWire(overrides: Partial<ProgramTranslationWire> = {}): ProgramTranslationWire {
+  return {
+    type: "tc-news:program-translation",
+    id: "program-translation-1",
+    programId: "program-1",
+    lang: "en",
+    fromId: "did:key:alice",
+    fromName: "Alice",
+    timestamp: Date.now(),
+    cid: "cid-1",
+    signature: "sig-1",
+    ...overrides,
+  };
+}
+
+describe("isProgramTranslationWire", () => {
+  it("accepts a well-formed wire", () => {
+    expect(isProgramTranslationWire(makeProgramTranslationWire())).toBe(true);
+  });
+
+  it("accepts a wire without fromApp (optional field)", () => {
+    const wire = makeProgramTranslationWire() as Record<string, unknown>;
+    delete wire.fromApp;
+    expect(isProgramTranslationWire(wire)).toBe(true);
+  });
+
+  it("accepts a wire with a string fromApp", () => {
+    expect(isProgramTranslationWire(makeProgramTranslationWire({ fromApp: "tc-news" }))).toBe(true);
+  });
+
+  it("rejects a wire with the wrong type discriminant", () => {
+    expect(isProgramTranslationWire({ ...makeProgramTranslationWire(), type: "tc-news:translation" })).toBe(false);
+  });
+
+  it("rejects a wire missing/non-string programId", () => {
+    const wire = makeProgramTranslationWire() as Record<string, unknown>;
+    delete wire.programId;
+    expect(isProgramTranslationWire(wire)).toBe(false);
+    expect(isProgramTranslationWire({ ...makeProgramTranslationWire(), programId: 42 })).toBe(false);
+  });
+
+  it("rejects a wire missing/non-string lang", () => {
+    const wire = makeProgramTranslationWire() as Record<string, unknown>;
+    delete wire.lang;
+    expect(isProgramTranslationWire(wire)).toBe(false);
+    expect(isProgramTranslationWire({ ...makeProgramTranslationWire(), lang: 42 })).toBe(false);
+  });
+
+  it("rejects a wire missing/non-string cid", () => {
+    const wire = makeProgramTranslationWire() as Record<string, unknown>;
+    delete wire.cid;
+    expect(isProgramTranslationWire(wire)).toBe(false);
+    expect(isProgramTranslationWire({ ...makeProgramTranslationWire(), cid: 42 })).toBe(false);
+  });
+
+  it("rejects a wire missing/non-string fromId", () => {
+    const wire = makeProgramTranslationWire() as Record<string, unknown>;
+    delete wire.fromId;
+    expect(isProgramTranslationWire(wire)).toBe(false);
+    expect(isProgramTranslationWire({ ...makeProgramTranslationWire(), fromId: 42 })).toBe(false);
+  });
+
+  it("rejects a wire missing/non-string signature", () => {
+    const wire = makeProgramTranslationWire() as Record<string, unknown>;
+    delete wire.signature;
+    expect(isProgramTranslationWire(wire)).toBe(false);
+    expect(isProgramTranslationWire({ ...makeProgramTranslationWire(), signature: 42 })).toBe(false);
+  });
+
+  it("rejects a wire with a non-number timestamp", () => {
+    expect(isProgramTranslationWire({ ...makeProgramTranslationWire(), timestamp: "not-a-number" })).toBe(false);
+  });
+
+  it("rejects a wire with a non-string fromApp", () => {
+    expect(isProgramTranslationWire({ ...makeProgramTranslationWire(), fromApp: 42 })).toBe(false);
+  });
+
+  it("rejects non-object values", () => {
+    expect(isProgramTranslationWire(null)).toBe(false);
+    expect(isProgramTranslationWire("not-an-object")).toBe(false);
+  });
+});
+
+function baseWireProgramTranslation(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    programId: "program-1",
+    lang: "en",
+    title: "Morning Briefing (EN)",
+    segmentTexts: ["seg one", "seg two"],
+    ...overrides,
+  };
+}
+
+describe("sanitizeProgramTranslationContent", () => {
+  it("passes valid text-only content through unchanged (no audio fields)", () => {
+    const content = sanitizeProgramTranslationContent(baseWireProgramTranslation());
+    expect(content).not.toBeNull();
+    expect(content).toEqual({
+      programId: "program-1",
+      lang: "en",
+      title: "Morning Briefing (EN)",
+      segmentTexts: ["seg one", "seg two"],
+    });
+  });
+
+  it("adopts audioCids and defaults audioMime when audioCids fully matches segmentTexts", () => {
+    const content = sanitizeProgramTranslationContent(
+      baseWireProgramTranslation({ audioCids: ["cid-1", "cid-2"] }),
+    );
+    expect(content).not.toBeNull();
+    expect(content?.audioCids).toEqual(["cid-1", "cid-2"]);
+    expect(content?.audioMime).toBe("audio/mpeg"); // 既定値
+    expect(content?.audioVoice).toBeUndefined();
+  });
+
+  it("keeps an explicit audioMime and audioVoice when present", () => {
+    const content = sanitizeProgramTranslationContent(
+      baseWireProgramTranslation({
+        audioCids: ["cid-1", "cid-2"],
+        audioMime: "audio/wav",
+        audioVoice: "alloy",
+      }),
+    );
+    expect(content).not.toBeNull();
+    expect(content?.audioMime).toBe("audio/wav");
+    expect(content?.audioVoice).toBe("alloy");
+  });
+
+  it("drops audio fields when audioCids length mismatches segmentTexts", () => {
+    const content = sanitizeProgramTranslationContent(
+      baseWireProgramTranslation({
+        audioCids: ["cid-1"], // segmentTextsは2件
+        audioVoice: "alloy",
+      }),
+    );
+    expect(content).not.toBeNull();
+    expect(content?.segmentTexts).toEqual(["seg one", "seg two"]);
+    expect(content?.audioCids).toBeUndefined();
+    expect(content?.audioMime).toBeUndefined();
+    expect(content?.audioVoice).toBeUndefined();
+  });
+
+  it("drops audio fields when audioCids contains an empty-string entry", () => {
+    const content = sanitizeProgramTranslationContent(
+      baseWireProgramTranslation({ audioCids: ["cid-1", ""] }),
+    );
+    expect(content).not.toBeNull();
+    expect(content?.audioCids).toBeUndefined();
+  });
+
+  it("drops audio fields when audioCids contains a non-string entry", () => {
+    const content = sanitizeProgramTranslationContent(
+      baseWireProgramTranslation({ audioCids: ["cid-1", 42] }),
+    );
+    expect(content).not.toBeNull();
+    expect(content?.audioCids).toBeUndefined();
+  });
+
+  it("drops audio fields when segmentTexts was thinned out by sanitization, even if audioCids matches the thinned length", () => {
+    // 生のsegmentTextsは3件だが数値混入で2件に間引かれる。audioCidsを間引き後の
+    // 長さ(2)に合わせても、間引き前後の長さが一致しない(segmentTextsIntact=false)
+    // ためaudioフィールドごと破棄される(sanitizeSharedProgramと同じ方針)。
+    const content = sanitizeProgramTranslationContent(
+      baseWireProgramTranslation({
+        segmentTexts: ["seg one", 42, "seg two"],
+        audioCids: ["cid-1", "cid-2"],
+      }),
+    );
+    expect(content).not.toBeNull();
+    expect(content?.segmentTexts).toEqual(["seg one", "seg two"]);
+    expect(content?.audioCids).toBeUndefined();
+    expect(content?.audioMime).toBeUndefined();
+  });
+
+  it("returns null for non-object values", () => {
+    expect(sanitizeProgramTranslationContent(null)).toBeNull();
+    expect(sanitizeProgramTranslationContent("not-an-object")).toBeNull();
+    expect(sanitizeProgramTranslationContent(42)).toBeNull();
+  });
+
+  it("returns null when programId is missing or empty", () => {
+    expect(sanitizeProgramTranslationContent(baseWireProgramTranslation({ programId: undefined }))).toBeNull();
+    expect(sanitizeProgramTranslationContent(baseWireProgramTranslation({ programId: "" }))).toBeNull();
+  });
+
+  it("returns null when lang is missing or empty", () => {
+    expect(sanitizeProgramTranslationContent(baseWireProgramTranslation({ lang: undefined }))).toBeNull();
+    expect(sanitizeProgramTranslationContent(baseWireProgramTranslation({ lang: "" }))).toBeNull();
+  });
+
+  it("returns null when title is not a string", () => {
+    expect(sanitizeProgramTranslationContent(baseWireProgramTranslation({ title: 42 }))).toBeNull();
+    expect(sanitizeProgramTranslationContent(baseWireProgramTranslation({ title: undefined }))).toBeNull();
+  });
+
+  it("accepts an empty-string title (only non-string is rejected)", () => {
+    const content = sanitizeProgramTranslationContent(baseWireProgramTranslation({ title: "" }));
+    expect(content).not.toBeNull();
+    expect(content?.title).toBe("");
+  });
+
+  it("returns null when segmentTexts is not an array", () => {
+    expect(sanitizeProgramTranslationContent(baseWireProgramTranslation({ segmentTexts: "not-an-array" }))).toBeNull();
+    expect(sanitizeProgramTranslationContent(baseWireProgramTranslation({ segmentTexts: undefined }))).toBeNull();
+  });
+
+  it("returns null when segmentTexts is an empty array", () => {
+    expect(sanitizeProgramTranslationContent(baseWireProgramTranslation({ segmentTexts: [] }))).toBeNull();
+  });
+
+  it("returns null when segmentTexts contains only non-string entries", () => {
+    expect(sanitizeProgramTranslationContent(baseWireProgramTranslation({ segmentTexts: [1, 2, 3] }))).toBeNull();
+  });
+
+  it("filters out (rather than rejects) non-string entries mixed with valid strings", () => {
+    // 実装はフィルタ後に0件なら初めてnullを返す方針(sanitizeSharedProgramの
+    // segments間引きと同じ)。混在の場合は文字列だけが残り、nullにはならない。
+    const content = sanitizeProgramTranslationContent(
+      baseWireProgramTranslation({ segmentTexts: ["seg one", 42, "seg two"] }),
+    );
+    expect(content).not.toBeNull();
+    expect(content?.segmentTexts).toEqual(["seg one", "seg two"]);
+  });
+
+  it("keeps only known fields, dropping unrecognized properties on the input", () => {
+    const content = sanitizeProgramTranslationContent(
+      baseWireProgramTranslation({ junk: "should not survive", audioCids: ["cid-1", "cid-2"] }),
+    );
+    expect(content).not.toBeNull();
+    expect(Object.keys(content as object).sort()).toEqual(
+      ["audioCids", "audioMime", "lang", "programId", "segmentTexts", "title"].sort(),
+    );
+  });
+});
+
+describe("loadProgramTranslationLog / appendProgramTranslationLog", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it("returns an empty array when the key is unset", () => {
+    expect(loadProgramTranslationLog("room-1")).toEqual([]);
+  });
+
+  it("round-trips a wire through append then load, preserving all fields", () => {
+    const wire = makeProgramTranslationWire({ fromApp: "tc-news" });
+    appendProgramTranslationLog("room-1", wire);
+    expect(loadProgramTranslationLog("room-1")).toEqual([wire]);
+  });
+
+  it("round-trips a wire without fromApp", () => {
+    const wire = makeProgramTranslationWire() as Record<string, unknown>;
+    delete wire.fromApp;
+    appendProgramTranslationLog("room-1", wire as unknown as ProgramTranslationWire);
+    const loaded = loadProgramTranslationLog("room-1");
+    expect(loaded).toHaveLength(1);
+    expect(loaded[0]).toEqual(wire);
+    expect(loaded[0].fromApp).toBeUndefined();
+  });
+
+  it("dedupes by wire.id: a later append with the same id is dropped, first wins", () => {
+    const first = makeProgramTranslationWire({ id: "dup-1", fromName: "Alice" });
+    const second = makeProgramTranslationWire({ id: "dup-1", fromName: "Bob" });
+    appendProgramTranslationLog("room-1", first);
+    appendProgramTranslationLog("room-1", second);
+    const loaded = loadProgramTranslationLog("room-1");
+    expect(loaded).toHaveLength(1);
+    expect(loaded[0].fromName).toBe("Alice");
+  });
+
+  it("keeps at most 100 entries (MAX_PROGRAM_TRANSLATION_LOG), dropping the oldest when a 101st is appended", () => {
+    for (let i = 0; i < 101; i++) {
+      appendProgramTranslationLog("room-1", makeProgramTranslationWire({ id: `program-translation-${i}` }));
+    }
+    const loaded = loadProgramTranslationLog("room-1");
+    expect(loaded).toHaveLength(100);
+    expect(loaded.some((w) => w.id === "program-translation-0")).toBe(false);
+    expect(loaded.some((w) => w.id === "program-translation-1")).toBe(true);
+    expect(loaded.some((w) => w.id === "program-translation-100")).toBe(true);
+  });
+
+  it("returns an empty array when localStorage holds malformed JSON", () => {
+    localStorage.setItem("tc-news:programtranslationlog:room-1", "{not valid json");
+    expect(loadProgramTranslationLog("room-1")).toEqual([]);
+  });
+
+  it("returns an empty array when the stored JSON is not an array", () => {
+    localStorage.setItem("tc-news:programtranslationlog:room-1", JSON.stringify({ not: "an array" }));
+    expect(loadProgramTranslationLog("room-1")).toEqual([]);
+  });
+
+  it("filters out non-wire garbage elements while keeping valid wires", () => {
+    const valid = makeProgramTranslationWire({ id: "valid-1" });
+    const garbage: unknown[] = [
+      null,
+      { type: "tc-news:program", id: "wrong-type" }, // wrong type
+      { type: "tc-news:program-translation", id: "missing-fields" }, // missing required fields
+      valid,
+    ];
+    localStorage.setItem("tc-news:programtranslationlog:room-1", JSON.stringify(garbage));
+    const loaded = loadProgramTranslationLog("room-1");
+    expect(loaded).toHaveLength(1);
+    expect(loaded[0]).toEqual(valid);
+  });
+
+  it("keeps logs independent across different roomIds", () => {
+    appendProgramTranslationLog("room-a", makeProgramTranslationWire({ id: "a-1" }));
+    appendProgramTranslationLog("room-b", makeProgramTranslationWire({ id: "b-1" }));
+    expect(loadProgramTranslationLog("room-a").map((w) => w.id)).toEqual(["a-1"]);
+    expect(loadProgramTranslationLog("room-b").map((w) => w.id)).toEqual(["b-1"]);
   });
 });
