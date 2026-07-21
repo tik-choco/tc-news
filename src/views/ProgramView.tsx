@@ -54,6 +54,7 @@ import { downloadProgramAudio, renderProgramAudio } from "../lib/programAudio";
 import { OPENAI_TTS_VOICES, useVoiceOptions } from "../lib/voices";
 import { emptyLlmConfig, loadLlmConfig, resolveVoice } from "../lib/llmConfig";
 import { loadReactions, subscribeReactions } from "../lib/reactionStore";
+import { loadViews, subscribeViews } from "../lib/viewStore";
 import { computeDailyRanking, type RankingEntry } from "../lib/ranking";
 import { enqueueJob, findPendingJob, isCancelError } from "../lib/jobQueue";
 import { useJobQueue } from "../hooks/useJobQueue";
@@ -131,6 +132,9 @@ export function ProgramView(props: {
     content: { title: string; segmentTexts: string[]; audioCids?: string[]; audioMime?: string; audioVoice?: string },
   ) => Promise<void>;
   onReactToProgram: (programId: string, kind: ReactionKind) => Promise<void>;
+  /** 番組を開いた(選択した)ことを閲覧数として記録する。onReactToProgramと同じく
+   * room/global両方へ送る(呼び出し側でハンドリング)。 */
+  onViewProgram: (programId: string) => Promise<void>;
   /** ランキング等からの深リンク: このidの番組(自分の/受信どちらでも)を選択する。 */
   deepLinkId?: string | null;
   /** 設定 programRuby — 台本生成時にルビ付与を指示する。 */
@@ -143,6 +147,7 @@ export function ProgramView(props: {
     onShareProgram,
     onShareProgramTranslation,
     onReactToProgram,
+    onViewProgram,
     deepLinkId,
     rubyEnabled,
   } = props;
@@ -218,6 +223,11 @@ export function ProgramView(props: {
   // programs section. Mirrors SharedView's reactionsTick pattern.
   const [reactionsTick, bumpReactionsTick] = useState(0);
   useEffect(() => subscribeReactions(() => bumpReactionsTick((n) => n + 1)), []);
+  // Views live in localStorage (viewStore), not props — same bump-on-write
+  // idiom as reactionsTick, so the popular-programs ranking re-reads it
+  // whenever a view is recorded anywhere.
+  const [viewsTick, bumpViewsTick] = useState(0);
+  useEffect(() => subscribeViews(() => bumpViewsTick((n) => n + 1)), []);
 
   const ttsSupported = isTtsSupported();
   const engine = activeTtsEngine();
@@ -248,6 +258,15 @@ export function ProgramView(props: {
     receivedPrograms.find((p) => p.id === selectedProgramId) ??
     null;
   const isOwnProgram = selectedProgram ? programs.some((p) => p.id === selectedProgram.id) : false;
+
+  // Opening a program (selecting it in the list) counts as a view. onViewProgram
+  // dedupes at the wire layer (viewStore.hasViewed via useNewsRoom's sendView) so
+  // re-selecting the same program repeatedly is a harmless no-op.
+  useEffect(() => {
+    if (!selectedProgram) return;
+    void onViewProgram(selectedProgram.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedProgram?.id]);
 
   // --- Script translation (lib/programTranslate.ts) ---------------------
   // Preview of the selected program's script (title + segment text) in
@@ -420,10 +439,11 @@ export function ProgramView(props: {
     program: RadioProgram;
   }
 
-  // reactionsTick is an intentional dep — it's how this recomputes when a
-  // reaction is sent anywhere (see the subscribeReactions effect above).
+  // reactionsTick/viewsTick are intentional deps — they're how this
+  // recomputes when a reaction or view is recorded anywhere (see the
+  // subscribeReactions/subscribeViews effects above).
   const popularRows = useMemo<PopularRow[]>(() => {
-    const entries = computeDailyRanking(loadReactions()).filter((e) => e.targetType === "program");
+    const entries = computeDailyRanking(loadReactions(), loadViews()).filter((e) => e.targetType === "program");
     const rows: PopularRow[] = [];
     for (const entry of entries) {
       const program = popularProgramsById.get(entry.targetId);
@@ -432,7 +452,7 @@ export function ProgramView(props: {
       if (rows.length >= 5) break;
     }
     return rows;
-  }, [reactionsTick, popularProgramsById]);
+  }, [reactionsTick, viewsTick, popularProgramsById]);
 
   // Load the available system voices once (async on some browsers).
   useEffect(() => {
@@ -935,7 +955,10 @@ export function ProgramView(props: {
                           <span>{row.program.authorName || t("common.anonymous")}</span>
                         </span>
                       </span>
-                      <span class="ranking-row-side">{t("shared.rankingReactions", { count: row.entry.count })}</span>
+                      <span class="ranking-row-side">
+                        <span>{t("shared.rankingReactions", { count: row.entry.count })}</span>
+                        <span>{t("shared.rankingViews", { count: row.entry.viewCount })}</span>
+                      </span>
                     </button>
                   </li>
                 );

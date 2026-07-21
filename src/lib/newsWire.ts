@@ -119,6 +119,24 @@ export interface ReactionWire extends Record<string, unknown> {
 }
 
 /**
+ * 記事/番組の閲覧1件を配信するワイヤ。ReactionWireと同じ自己完結型(CIDホップ
+ * なし)の署名済みワイヤで、kindが無い以外はReactionWireと対称の形。受信側は
+ * (targetId, fromId)でデデュープする(lib/viewStore.tsのhasViewed) — 同じ
+ * DIDが同じ対象を何度開いても1件しか記録されないので、閲覧数の水増しを防げる。
+ */
+export interface ViewWire extends Record<string, unknown> {
+  type: "tc-news:view";
+  id: string; // ワイヤの一意id(uuid) — targetIdではない
+  targetId: string; // NewsArticle.id または RadioProgram.id
+  targetType: "article" | "program";
+  fromId: string; // 閲覧者DID
+  fromName: string;
+  timestamp: number;
+  signature: string;
+  fromApp?: string;
+}
+
+/**
  * 番組(RadioProgram)をP2P共有するワイヤ。記事と同じくJSON全体をCID化し、
  * CID+メタデータだけを署名して配信する(ArticleWireと対称の形)。
  */
@@ -191,6 +209,7 @@ const SHARED_ARTICLES_KEY_PREFIX = "tc-news:shared:";
 const WIRE_LOG_KEY_PREFIX = "tc-news:wirelog:";
 const SHARED_PROGRAMS_KEY_PREFIX = "tc-news:shared-programs:";
 const REACTION_LOG_KEY_PREFIX = "tc-news:reactionlog:";
+const VIEW_LOG_KEY_PREFIX = "tc-news:viewlog:";
 const PROGRAM_LOG_KEY_PREFIX = "tc-news:programlog:";
 const PROGRAM_TRANSLATION_LOG_KEY_PREFIX = "tc-news:programtranslationlog:";
 const FEED_SHARE_LOG_KEY_PREFIX = "tc-news:feedlog:";
@@ -198,6 +217,7 @@ export const MAX_SHARED_ARTICLES = 200;
 const MAX_WIRE_LOG = 300;
 export const MAX_SHARED_PROGRAMS = 100;
 const MAX_REACTION_LOG = 1000;
+const MAX_VIEW_LOG = 1000;
 const MAX_PROGRAM_LOG = 100;
 const MAX_PROGRAM_TRANSLATION_LOG = 100;
 const MAX_FEED_SHARE_LOG = 200;
@@ -223,6 +243,14 @@ export function newReactionWireId(): string {
     return crypto.randomUUID();
   } catch {
     return `reaction-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  }
+}
+
+export function newViewWireId(): string {
+  try {
+    return crypto.randomUUID();
+  } catch {
+    return `view-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   }
 }
 
@@ -505,6 +533,22 @@ export function isReactionWire(value: unknown): value is ReactionWire {
   );
 }
 
+export function isViewWire(value: unknown): value is ViewWire {
+  if (!value || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  return (
+    v.type === "tc-news:view" &&
+    typeof v.id === "string" &&
+    typeof v.targetId === "string" &&
+    (v.targetType === "article" || v.targetType === "program") &&
+    typeof v.fromId === "string" &&
+    typeof v.fromName === "string" &&
+    typeof v.timestamp === "number" &&
+    typeof v.signature === "string" &&
+    (v.fromApp === undefined || typeof v.fromApp === "string")
+  );
+}
+
 export function isProgramWire(value: unknown): value is ProgramWire {
   if (!value || typeof value !== "object") return false;
   const v = value as Record<string, unknown>;
@@ -581,6 +625,33 @@ export function appendReactionLog(roomId: string, wire: ReactionWire): void {
   const next = [...log, wire];
   const trimmed = next.length > MAX_REACTION_LOG ? next.slice(next.length - MAX_REACTION_LOG) : next;
   safeSetItem(REACTION_LOG_KEY_PREFIX + roomId, JSON.stringify(trimmed));
+}
+
+/**
+ * 閲覧の履歴ログ(新規参加者へのリプレイ用)。リアクションのログとは別キーで
+ * 保持する理由も同じ — 閲覧は記事を開くたびに1件ずつ発生しうるため、同じログを
+ * 共有すると記事/リアクションワイヤがリプレイ窓から押し出されてしまう
+ * (ファイル冒頭コメント参照)。
+ */
+export function loadViewLog(roomId: string): ViewWire[] {
+  try {
+    const raw = localStorage.getItem(VIEW_LOG_KEY_PREFIX + roomId);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(isViewWire);
+  } catch {
+    return [];
+  }
+}
+
+/** 閲覧ワイヤをwire idでデデュープして記録する(新しい順に上限件数で切り詰め)。 */
+export function appendViewLog(roomId: string, wire: ViewWire): void {
+  const log = loadViewLog(roomId);
+  if (log.some((w) => w.id === wire.id)) return;
+  const next = [...log, wire];
+  const trimmed = next.length > MAX_VIEW_LOG ? next.slice(next.length - MAX_VIEW_LOG) : next;
+  safeSetItem(VIEW_LOG_KEY_PREFIX + roomId, JSON.stringify(trimmed));
 }
 
 /**

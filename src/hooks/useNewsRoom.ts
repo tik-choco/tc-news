@@ -21,17 +21,20 @@ import {
   appendProgramLog,
   appendProgramTranslationLog,
   appendReactionLog,
+  appendViewLog,
   appendWireLog,
   isFeedShareWire,
   isProgramTranslationWire,
   isProgramWire,
   isReactionWire,
+  isViewWire,
   loadFeedShareLog,
   loadProgramLog,
   loadProgramTranslationLog,
   loadReactionLog,
   loadSharedArticles,
   loadSharedPrograms,
+  loadViewLog,
   loadWireLog,
   MAX_SHARED_ARTICLES,
   MAX_SHARED_PROGRAMS,
@@ -39,6 +42,7 @@ import {
   newProgramTranslationWireId,
   newReactionWireId,
   newTranslationWireId,
+  newViewWireId,
   sanitizeProgramTranslationContent,
   sanitizeSharedProgram,
   saveSharedArticles,
@@ -50,8 +54,10 @@ import {
   type ProgramWire,
   type ReactionWire,
   type TranslationWire,
+  type ViewWire,
 } from "../lib/newsWire";
 import { addReaction } from "../lib/reactionStore";
+import { addView, hasViewed } from "../lib/viewStore";
 import {
   getProgramTranslation,
   saveProgramTranslation,
@@ -454,6 +460,29 @@ export function useNewsRoom(roomId: string, userName: string, enabled = true) {
       }
     }
 
+    // Views carry no CID either — same self-contained shape as reactions,
+    // minus `kind`. viewStore.addView dedups by (targetId, fromId), and only
+    // a genuinely-new view is appended to its own replay log.
+    async function hydrateView(wire: ViewWire) {
+      try {
+        if (!(await verifyWire(wire))) {
+          console.warn("discarding view wire with invalid signature", wire.id);
+          return;
+        }
+        if (cancelled) return;
+        if (wire.targetType !== "article" && wire.targetType !== "program") return;
+        const isNew = addView({
+          targetId: wire.targetId,
+          targetType: wire.targetType,
+          fromId: wire.fromId,
+          timestamp: wire.timestamp,
+        });
+        if (isNew) appendViewLog(roomId, wire);
+      } catch (err) {
+        console.error("failed to apply view wire", err);
+      }
+    }
+
     function replayHistoryTo(requesterId: string) {
       const now = Date.now();
       if (now - (answeredAt.get(requesterId) ?? 0) < HISTORY_ANSWER_THROTTLE_MS) return;
@@ -463,24 +492,28 @@ export function useNewsRoom(roomId: string, userName: string, enabled = true) {
       // same staggered replay: the reaction indices continue after the wire
       // log's so the two logs don't burst onto the link at the same time.
       const reactionLog = loadReactionLog(roomId);
+      // View wires also live in their own log (see hydrateView above) and
+      // ride the same staggered replay, continuing after the wire/reaction
+      // logs so none of the three bursts onto the link at once.
+      const viewLog = loadViewLog(roomId);
       // Program wires also live in their own log (see hydrateProgram above)
-      // and ride the same staggered replay, continuing after both the wire
-      // log and reaction log so none of the three bursts onto the link at
-      // once.
+      // and ride the same staggered replay, continuing after the wire/
+      // reaction/view logs so none of the four bursts onto the link at once.
       const programLog = loadProgramLog(roomId);
       // Program-translation wires also live in their own log (see
       // hydrateProgramTranslation above) and ride the same staggered replay,
-      // continuing after the wire/reaction/program logs so none of the five
-      // bursts onto the link at once.
+      // continuing after the wire/reaction/view/program logs so none of the
+      // six bursts onto the link at once.
       const programTranslationLog = loadProgramTranslationLog(roomId);
       // Feed-share wires also live in their own log (see hydrateFeedShare
-      // above) and ride the same staggered replay, continuing after the wire/
-      // reaction/program/program-translation logs so none of the five bursts
-      // onto the link at once.
+      // above) and ride the same staggered replay, continuing after the
+      // wire/reaction/view/program/program-translation logs so none of the
+      // six bursts onto the link at once.
       const feedShareLog = loadFeedShareLog(roomId);
       if (
         log.length === 0 &&
         reactionLog.length === 0 &&
+        viewLog.length === 0 &&
         programLog.length === 0 &&
         programTranslationLog.length === 0 &&
         feedShareLog.length === 0
@@ -499,23 +532,29 @@ export function useNewsRoom(roomId: string, userName: string, enabled = true) {
             node.sendMessage(requesterId, wire, DELIVERY_RELIABLE, channelId);
           }, (log.length + index) * REPLAY_STAGGER_MS);
         });
-        programLog.forEach((wire, index) => {
+        viewLog.forEach((wire, index) => {
           setTimeout(() => {
             if (cancelled) return;
             node.sendMessage(requesterId, wire, DELIVERY_RELIABLE, channelId);
           }, (log.length + reactionLog.length + index) * REPLAY_STAGGER_MS);
         });
+        programLog.forEach((wire, index) => {
+          setTimeout(() => {
+            if (cancelled) return;
+            node.sendMessage(requesterId, wire, DELIVERY_RELIABLE, channelId);
+          }, (log.length + reactionLog.length + viewLog.length + index) * REPLAY_STAGGER_MS);
+        });
         programTranslationLog.forEach((wire, index) => {
           setTimeout(() => {
             if (cancelled) return;
             node.sendMessage(requesterId, wire, DELIVERY_RELIABLE, channelId);
-          }, (log.length + reactionLog.length + programLog.length + index) * REPLAY_STAGGER_MS);
+          }, (log.length + reactionLog.length + viewLog.length + programLog.length + index) * REPLAY_STAGGER_MS);
         });
         feedShareLog.forEach((wire, index) => {
           setTimeout(() => {
             if (cancelled) return;
             node.sendMessage(requesterId, wire, DELIVERY_RELIABLE, channelId);
-          }, (log.length + reactionLog.length + programLog.length + programTranslationLog.length + index) * REPLAY_STAGGER_MS);
+          }, (log.length + reactionLog.length + viewLog.length + programLog.length + programTranslationLog.length + index) * REPLAY_STAGGER_MS);
         });
       });
     }
@@ -535,6 +574,8 @@ export function useNewsRoom(roomId: string, userName: string, enabled = true) {
           hydrateProgramTranslation(decoded);
         } else if (isReactionWire(decoded)) {
           hydrateReaction(decoded);
+        } else if (isViewWire(decoded)) {
+          hydrateView(decoded);
         } else if (isFeedShareWire(decoded)) {
           hydrateFeedShare(decoded);
         } else if (isHistoryRequestPayload(decoded)) {
@@ -820,6 +861,39 @@ export function useNewsRoom(roomId: string, userName: string, enabled = true) {
     });
   }
 
+  // A view wire is self-contained (no CID hop), mirroring sendReaction, with
+  // one difference: since a view is recorded automatically whenever a reader
+  // opens an article/program (not a deliberate button press), an early
+  // hasViewed() check skips signing/broadcasting a fresh wire for a target
+  // this DID has already viewed — re-opening the same article repeatedly
+  // must not spam the room with redundant wires. viewStore.addView's own
+  // dedup (targetId, fromId) is the real backstop; this is just a network-
+  // traffic optimization on top of it.
+  async function sendView(targetId: string, targetType: "article" | "program"): Promise<void> {
+    const identity = await ensureDidIdentity();
+    if (hasViewed(targetId, identity.did)) return;
+    const node = await getNode();
+    const unsigned = {
+      type: "tc-news:view" as const,
+      id: newViewWireId(),
+      targetId,
+      targetType,
+      fromId: identity.did,
+      fromName: userNameRef.current,
+      timestamp: Date.now(),
+      fromApp: "tc-news",
+    };
+    const wire: ViewWire = { ...unsigned, signature: await signWireFields(unsigned) };
+    node.sendMessage(null, wire, DELIVERY_RELIABLE, roomIdRef.current);
+    appendViewLog(roomIdRef.current, wire);
+    addView({
+      targetId,
+      targetType,
+      fromId: identity.did,
+      timestamp: unsigned.timestamp,
+    });
+  }
+
   // A feed-share wire is self-contained (no CID hop), mirroring sendReaction:
   // it goes on the wire, into the room's feed-share replay log, and straight
   // into local state so the sender's own UI shows it without waiting for an
@@ -854,6 +928,7 @@ export function useNewsRoom(roomId: string, userName: string, enabled = true) {
     shareProgram,
     shareProgramTranslation,
     sendReaction,
+    sendView,
     shareFeed,
     connected,
     peers,

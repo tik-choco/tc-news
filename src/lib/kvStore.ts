@@ -58,6 +58,7 @@ export const KV_MANAGED_KEYS = [
   "tc-news:link-previews",
   "tc-news:evaluations",
   "tc-news:reactions",
+  "tc-news:views",
 ];
 
 const mirror = new Map<string, string>();
