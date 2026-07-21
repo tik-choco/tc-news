@@ -40,6 +40,7 @@ import { forwardArticleToGlobal } from "./lib/globalArticlesReader";
 import { readHash, writeHash, onHashChange } from "./lib/hashRoute";
 import { useTheme } from "./hooks/useTheme";
 import { useNetworkProviderHost } from "./hooks/useNetworkProviderHost";
+import { useNetworkModelSync } from "./hooks/useNetworkModelSync";
 import { useNewsRoom } from "./hooks/useNewsRoom";
 import { useUnreadShared } from "./hooks/useUnreadShared";
 import { ensureDidIdentity } from "./crypto/didIdentity";
@@ -161,6 +162,7 @@ export function App() {
     shareProgram,
     shareProgramTranslation,
     sendReaction,
+    sendView,
     shareFeed,
     connected,
     peers,
@@ -201,6 +203,12 @@ export function App() {
   // AI Network provider: アプリ全体の寿命でホストする(設定画面を閉じても
   // 提供が続くように)。SettingsViewには表示用にstatusを渡すだけ。
   const networkProvider = useNetworkProviderHost();
+
+  // AI Network consumer: ルームが公開しているモデルをローカルのshared llm
+  // configへ取り込み、SettingsViewの接続先/モデル一覧に反映する
+  // (hooks/useNetworkModelSync.ts)。providerと同様アプリ全体の寿命で動かし、
+  // 設定画面を閉じていても取り込みが続くようにする。
+  useNetworkModelSync();
 
   // #room=<roomId> startup handling: a one-shot deep link that switches the
   // active room, then clears the hash so the user's own navigation (or a
@@ -568,6 +576,9 @@ export function App() {
                 ? sendReaction(targetId, targetType, kind)
                 : globalRoom.sendReaction(targetId, targetType, kind)
             }
+            onView={(targetId: string, targetType: "article" | "program", source: "room" | "global") =>
+              source === "room" ? sendView(targetId, targetType) : globalRoom.sendView(targetId, targetType)
+            }
             roomSharedFeeds={sharedFeeds}
             globalSharedFeeds={globalRoom.sharedFeeds}
             onShareFeed={(url: string, label: string, source: "room" | "global") =>
@@ -631,6 +642,19 @@ export function App() {
               if (settings.roomId !== GLOBAL_ARTICLES_ROOM_ID) {
                 try {
                   await globalRoom.sendReaction(programId, "program", kind);
+                } catch {
+                  /* best-effort */
+                }
+              }
+            }}
+            onViewProgram={async (programId: string) => {
+              // Program views go to both rooms, mirroring onReactToProgram
+              // above — receivers dedup by (targetId, fromId), so the double
+              // wire is harmless.
+              await sendView(programId, "program");
+              if (settings.roomId !== GLOBAL_ARTICLES_ROOM_ID) {
+                try {
+                  await globalRoom.sendView(programId, "program");
                 } catch {
                   /* best-effort */
                 }

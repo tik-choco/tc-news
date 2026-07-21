@@ -1,11 +1,15 @@
 // Helpers for AI Networkへ「共有するモデル」を扱うための小さなユーティリティ群。
 // tc-translateのsrc/lib/networkModels.tsを移植したもの(参照実装は
-// SettingsView.tsx冒頭コメント参照)。mist-network://疑似プロバイダの判定は
-// 将来ネットワーク側のモデルを取り込む機能(tc-translateのuseNetworkModelSync
-// 相当)を足すときのために持たせてあるが、tc-newsは現時点でその取り込みは
-// 実装していない — advertisedModelNameだけが今のuseNetworkProviderHostから
-// 使われる。
+// SettingsView.tsx冒頭コメント参照)。mist-network://疑似プロバイダは、ルーム
+// 側が公開しているモデルをローカルのtc-shared-llm-config-v1へ取り込む際の
+// provider baseUrlとして使われる(hooks/useNetworkModelSync.ts)。
+export const NETWORK_PROVIDER_LABEL = "AI Network";
 export const NETWORK_PROVIDER_URL_PREFIX = "mist-network://";
+
+/** ルームIDから、そのルームを表す疑似プロバイダのbaseUrlを組み立てる。 */
+export function networkProviderBaseUrl(roomId: string): string {
+  return `${NETWORK_PROVIDER_URL_PREFIX}${roomId.trim() || "default"}`;
+}
 
 export function isNetworkProviderBaseUrl(baseUrl: string): boolean {
   return baseUrl.trim().startsWith(NETWORK_PROVIDER_URL_PREFIX);

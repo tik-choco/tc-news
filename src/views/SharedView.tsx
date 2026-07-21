@@ -37,6 +37,7 @@ import { isCancelError } from "../lib/jobQueue";
 import { useTranslationProgress } from "../hooks/useTranslationProgress";
 import { LanguagePicker } from "../components/LanguagePicker";
 import { loadReactions, subscribeReactions } from "../lib/reactionStore";
+import { loadViews, subscribeViews } from "../lib/viewStore";
 import { computeDailyRanking, type RankingEntry } from "../lib/ranking";
 import { loadMyArticles } from "../lib/articleStore";
 import { loadPrograms } from "../lib/programStore";
@@ -84,6 +85,9 @@ export function SharedView(props: {
     kind: ReactionKind,
     source: Source,
   ) => Promise<void>;
+  /** 記事/番組を開いた(選択した)ことを閲覧数として記録する。onReactと同じく
+   * source(room/global)で送り先を切り替える。 */
+  onView: (targetId: string, targetType: "article" | "program", source: Source) => Promise<void>;
   /** フィード共有ワイヤ一覧(ソースごと)。hooks/useNewsRoom.tsのsharedFeeds
    * をroom/globalそれぞれから受け取る — articles/programsと同じ二系統構成。 */
   roomSharedFeeds: FeedShareWire[];
@@ -111,6 +115,7 @@ export function SharedView(props: {
     myDid,
     sharedPrograms,
     onReact,
+    onView,
     roomSharedFeeds,
     globalSharedFeeds,
     onShareFeed,
@@ -154,6 +159,11 @@ export function SharedView(props: {
   // store write (any ReactionBar anywhere) to re-read it for the ranking pane.
   const [reactionsTick, bumpReactionsTick] = useState(0);
   useEffect(() => subscribeReactions(() => bumpReactionsTick((n) => n + 1)), []);
+  // Views live in localStorage (viewStore), not props — same bump-on-write
+  // idiom as reactionsTick, so the ranking pane re-reads it whenever a view
+  // is recorded anywhere.
+  const [viewsTick, bumpViewsTick] = useState(0);
+  useEffect(() => subscribeViews(() => bumpViewsTick((n) => n + 1)), []);
   // rankingArticlesById/rankingProgramsById below call loadMyArticles()/
   // loadPrograms() (mist KV-backed, lib/kvStore.ts) inside a useMemo keyed on
   // the live room/global props — if hydration finishes without those props
@@ -360,6 +370,16 @@ export function SharedView(props: {
   const sourcePeers = source === "room" ? roomPeers : globalPeers;
   const sourceSharedFeeds = source === "room" ? roomSharedFeeds : globalSharedFeeds;
   const active = sourceArticles.find((a) => a.id === activeId) ?? null;
+
+  // Opening an article (selecting it in this pane) counts as a view. onView
+  // dedupes at the wire layer (viewStore.hasViewed via useNewsRoom's
+  // sendView) so re-selecting the same article repeatedly is a harmless no-op.
+  useEffect(() => {
+    if (!active) return;
+    void onView(active.id, "article", source);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active?.id, source]);
+
   // Not stateful — re-read on every render, same idiom as ArticlesView's latestEval.
   const cachedTranslation = active ? getTranslation(active.id, targetLang) : null;
   const needsTranslation = active ? active.lang !== targetLang : false;
@@ -460,10 +480,11 @@ export function SharedView(props: {
     authorDid: string;
   }
 
-  // reactionsTick is an intentional dep — it's how this recomputes when a
-  // reaction is sent anywhere (see the subscribeReactions effect above).
+  // reactionsTick/viewsTick are intentional deps — they're how this
+  // recomputes when a reaction or view is recorded anywhere (see the
+  // subscribeReactions/subscribeViews effects above).
   const rankingRows = useMemo<RankingRow[]>(() => {
-    const entries = computeDailyRanking(loadReactions());
+    const entries = computeDailyRanking(loadReactions(), loadViews());
     const rows: RankingRow[] = [];
     for (const entry of entries) {
       const target =
@@ -477,7 +498,7 @@ export function SharedView(props: {
       });
     }
     return rows;
-  }, [reactionsTick, rankingArticlesById, rankingProgramsById]);
+  }, [reactionsTick, viewsTick, rankingArticlesById, rankingProgramsById]);
 
   // rankingRows is already sorted desc by count (computeDailyRanking's order
   // is preserved by the filter above), so the first row authored by me is
@@ -593,7 +614,10 @@ export function SharedView(props: {
                         ) : null}
                       </span>
                     </span>
-                    <span class="ranking-row-side">{t("shared.rankingReactions", { count: row.entry.count })}</span>
+                    <span class="ranking-row-side">
+                      <span>{t("shared.rankingReactions", { count: row.entry.count })}</span>
+                      <span>{t("shared.rankingViews", { count: row.entry.viewCount })}</span>
+                    </span>
                   </>
                 );
                 return (

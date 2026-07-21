@@ -14,9 +14,10 @@
 //     チェックボックス一覧(provider.networkProviderPresetIds、
 //     eligiblePresets/handleToggleShareModel)で選び、既定プリセットに加えて
 //     provider_hello.modelsとして広告される(lib/networkModels.ts、
-//     hooks/useNetworkProviderHost.ts)。mist-network://疑似プロバイダの
-//     取り込み(ネットワーク側のモデルをローカルpresetへ逆輸入する機能)は
-//     まだ実装していない。
+//     hooks/useNetworkProviderHost.ts)。逆方向(ネットワーク側が公開している
+//     モデルをmist-network://疑似プロバイダとしてローカルpresetへ取り込む)は
+//     hooks/useNetworkModelSync.tsがapp.tsx側でホストしており、ここは
+//     取り込まれた接続先/モデルを他のpreset同様に表示するだけ。
 //   - tasks: 既定/編集部:計画/編集部:執筆 の各preset+reasoning_effort、
 //     および読み上げ(TTS)のモデル/ボイスピッカーを1画面に統合。常時表示の
 //     説明段落は置かず、各行ラベルのhoverツールチップ(data-tip)に説明を持たせる。
