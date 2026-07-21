@@ -41,6 +41,11 @@ export interface ProviderSettings {
   networkConsumerEnabled: boolean;
   /** 自分の既定プリセットのLLMをAI Networkルームへ提供するか(app.tsxがホスト)。 */
   networkProviderEnabled: boolean;
+  /** AI Networkルームへ広告する(=共有する)preset idの一覧。空 = 何も共有しない
+   * (既定プリセットのみを提供する従来動作のまま)。provider_hello.modelsとして
+   * 広告され、着信するモデル指定リクエストはこの一覧の中からのみ振り分けられる
+   * (lib/networkModels.ts, hooks/useNetworkProviderHost.ts参照)。 */
+  networkProviderPresetIds: string[];
   /** 編集部生成のorchestrator役に使うpreset id。""はdefaultPresetIdに従う。 */
   orchestratorPresetId: string;
   /** 編集部生成のworker役に使うpreset id。""はdefaultPresetIdに従う。 */
@@ -52,6 +57,7 @@ function defaultProviderSettings(): ProviderSettings {
     ttsEnabled: false,
     networkConsumerEnabled: false,
     networkProviderEnabled: false,
+    networkProviderPresetIds: [],
     orchestratorPresetId: "",
     workerPresetId: "",
   };
@@ -66,6 +72,9 @@ function sanitizeSettings(value: Record<string, unknown>): ProviderSettings {
     ttsEnabled: value.ttsEnabled === true,
     networkConsumerEnabled: value.networkConsumerEnabled === true,
     networkProviderEnabled: value.networkProviderEnabled === true,
+    networkProviderPresetIds: Array.isArray(value.networkProviderPresetIds)
+      ? value.networkProviderPresetIds.filter((id): id is string => typeof id === "string")
+      : [],
     orchestratorPresetId: typeof value.orchestratorPresetId === "string" ? value.orchestratorPresetId : "",
     workerPresetId: typeof value.workerPresetId === "string" ? value.workerPresetId : "",
   };
@@ -215,6 +224,7 @@ function migrateLegacySettings(raw: Record<string, unknown>): ProviderSettings |
     networkConsumerEnabled: raw.networkConsumerEnabled === true,
     // 旧形式にはprovider提供の概念がないため常にオフで開始する。
     networkProviderEnabled: false,
+    networkProviderPresetIds: [],
     orchestratorPresetId: rolePointer(raw.orchestratorProfileId),
     workerPresetId: rolePointer(raw.workerProfileId),
   };

@@ -247,6 +247,7 @@ export const es: Messages = {
     presetBadgeOrchestrator: "Redacción: plan",
     presetBadgeWorker: "Redacción: escritura",
     presetBadgeTts: "Narración",
+    presetBadgeShared: "Compartido con la AI Network",
     baseUrl: "Base URL",
     apiKey: "Clave de API",
     model: "Modelo",
@@ -279,6 +280,8 @@ export const es: Messages = {
     networkProviderDesc:
       "Responde a las solicitudes de LLM de otros pares de la sala usando el endpoint del preset predeterminado. Sigue funcionando aunque cierres la pantalla de ajustes.",
     networkProviderNotConfigured: "Configura una Base URL y un modelo en el preset predeterminado para empezar a proveer.",
+    networkShareModelsHeading: "Modelos a compartir",
+    networkShareModelsEmpty: "No hay modelos disponibles para compartir. Agrega uno primero en la pestaña de Conexión IA.",
 
     taskDefaultLabel: "Predeterminado",
     taskTipDefault: "Se usa para traducción, resúmenes, generación de programas y cualquier tarea sin un rol propio.",

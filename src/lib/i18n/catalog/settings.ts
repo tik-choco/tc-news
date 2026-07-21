@@ -65,6 +65,7 @@ const ja = {
   presetBadgeOrchestrator: "編集部:計画",
   presetBadgeWorker: "編集部:執筆",
   presetBadgeTts: "読み上げ",
+  presetBadgeShared: "AI Networkへ共有中",
   baseUrl: "Base URL",
   apiKey: "APIキー",
   model: "モデル",
@@ -98,6 +99,8 @@ const ja = {
   networkProviderDesc:
     "既定のプリセットの接続先を使って、ルーム内の他のピアからのLLMリクエストに応答します。設定画面を閉じても提供は継続します。",
   networkProviderNotConfigured: "既定のプリセットに接続先とモデルを設定すると提供を開始できます。",
+  networkShareModelsHeading: "提供するモデル",
+  networkShareModelsEmpty: "共有できるモデルがありません。先に「AI接続」タブでモデルを追加してください。",
 
   // ----- タスクタブ(既定/編集部:計画/編集部:執筆/読み上げ) -----------------
   taskDefaultLabel: "既定",
@@ -174,6 +177,7 @@ const en: typeof ja = {
   presetBadgeOrchestrator: "Newsroom: plan",
   presetBadgeWorker: "Newsroom: write",
   presetBadgeTts: "Narration",
+  presetBadgeShared: "Sharing to AI Network",
   baseUrl: "Base URL",
   apiKey: "API key",
   model: "Model",
@@ -206,6 +210,8 @@ const en: typeof ja = {
   networkProviderDesc:
     "Answers LLM requests from other peers in the room using the default preset's endpoint. Providing keeps running even while the settings screen is closed.",
   networkProviderNotConfigured: "Set a Base URL and model on the default preset to start providing.",
+  networkShareModelsHeading: "Models to share",
+  networkShareModelsEmpty: "No models available to share yet. Add one in the AI Connection tab first.",
 
   taskDefaultLabel: "Default",
   taskTipDefault: "Used for translation, summarization, program generation, and anything else with no role of its own.",

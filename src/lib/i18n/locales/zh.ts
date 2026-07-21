@@ -237,6 +237,7 @@ export const zh: Messages = {
     presetBadgeOrchestrator: "编辑部：策划",
     presetBadgeWorker: "编辑部：撰写",
     presetBadgeTts: "朗读",
+    presetBadgeShared: "正在共享到AI Network",
     baseUrl: "Base URL",
     apiKey: "API 密钥",
     model: "模型",
@@ -268,6 +269,8 @@ export const zh: Messages = {
     networkProviderDesc:
       "使用默认预设的连接地址，响应房间内其他对等节点发来的LLM请求。关闭设置页面后，提供仍会继续。",
     networkProviderNotConfigured: "为默认预设设置连接地址和模型后即可开始提供。",
+    networkShareModelsHeading: "提供的模型",
+    networkShareModelsEmpty: "暂无可共享的模型。请先在「AI连接」标签页中添加模型。",
 
     taskDefaultLabel: "默认",
     taskTipDefault: "用于翻译、摘要、节目生成等没有专属角色的所有处理。",
