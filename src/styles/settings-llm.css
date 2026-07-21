@@ -406,3 +406,75 @@
   padding-top: var(--space-2);
   border-top: 1px solid var(--border);
 }
+
+/* 提供するモデルのチェックボックス一覧(AI Networkタブ、providerカード内)。
+   model-row-listのグリッドと違い、チェックボックス付きの単純な縦積みリスト
+   (tc-translateのSettingsModal.tsx由来)。 */
+.network-share-models {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.network-share-models > label {
+  margin-bottom: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.network-share-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.network-share-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 10px;
+  row-gap: 1px;
+  align-items: center;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--surface);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+
+.network-share-item:hover {
+  background: var(--surface-2);
+}
+
+.network-share-item:has(input:checked) {
+  background: var(--primary-soft);
+  border-color: var(--primary);
+}
+
+.network-share-item input[type="checkbox"] {
+  grid-row: 1 / 3;
+  margin: 0;
+}
+
+.network-share-item-label {
+  min-width: 0;
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.network-share-item-model {
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 400;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

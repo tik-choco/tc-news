@@ -9,6 +9,7 @@ function baseSettings(overrides: Partial<ProviderSettings> = {}): ProviderSettin
     ttsEnabled: false,
     networkConsumerEnabled: false,
     networkProviderEnabled: false,
+    networkProviderPresetIds: [],
     orchestratorPresetId: "",
     workerPresetId: "",
     ...overrides,

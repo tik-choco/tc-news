@@ -238,6 +238,7 @@ export const ko: Messages = {
     presetBadgeOrchestrator: "편집부: 기획",
     presetBadgeWorker: "편집부: 집필",
     presetBadgeTts: "낭독",
+    presetBadgeShared: "AI Network에 공유 중",
     baseUrl: "Base URL",
     apiKey: "API 키",
     model: "모델",
@@ -270,6 +271,8 @@ export const ko: Messages = {
     networkProviderDesc:
       "기본 프리셋의 연결 주소를 사용해 룸 내 다른 피어의 LLM 요청에 응답합니다. 설정 화면을 닫아도 제공은 계속됩니다.",
     networkProviderNotConfigured: "기본 프리셋에 연결 주소와 모델을 설정하면 제공을 시작할 수 있습니다.",
+    networkShareModelsHeading: "제공할 모델",
+    networkShareModelsEmpty: "공유할 수 있는 모델이 없습니다. 먼저 'AI 연결' 탭에서 모델을 추가하세요.",
 
     taskDefaultLabel: "기본값",
     taskTipDefault: "번역·요약·프로그램 생성 등 별도 역할이 지정되지 않은 모든 작업에 사용되는 모델입니다.",

@@ -10,10 +10,13 @@
 //     提供する)。providerのライフサイクル本体はapp.tsx側
 //     (hooks/useNetworkProviderHost.ts)がマウントし続けており、ここは
 //     props.networkProvider(UseNetworkProviderResult)を表示するだけ —
-//     設定画面を閉じても提供が途切れないようにするため。tc-newsのprovider
-//     hookは単一の既定プリセットだけを提供する作り(モデル一覧の広告や
-//     mist-network://疑似プロバイダの取り込みはない)なので、共有モデルの
-//     チェックリストは持たない — 提供ON/OFFと状態パネルのみ。
+//     設定画面を閉じても提供が途切れないようにするため。共有するモデルは
+//     チェックボックス一覧(provider.networkProviderPresetIds、
+//     eligiblePresets/handleToggleShareModel)で選び、既定プリセットに加えて
+//     provider_hello.modelsとして広告される(lib/networkModels.ts、
+//     hooks/useNetworkProviderHost.ts)。mist-network://疑似プロバイダの
+//     取り込み(ネットワーク側のモデルをローカルpresetへ逆輸入する機能)は
+//     まだ実装していない。
 //   - tasks: 既定/編集部:計画/編集部:執筆 の各preset+reasoning_effort、
 //     および読み上げ(TTS)のモデル/ボイスピッカーを1画面に統合。常時表示の
 //     説明段落は置かず、各行ラベルのhoverツールチップ(data-tip)に説明を持たせる。
@@ -66,6 +69,7 @@ import {
   type SharedLlmConfigV1,
 } from "../lib/llmConfig";
 import { isLlmConfigCorrupted, subscribeLlmConfigStore, updateLlmConfig } from "../lib/llmConfigStore";
+import { isNetworkProviderBaseUrl } from "../lib/networkModels";
 import {
   DEFAULT_REASONING_EFFORT,
   REASONING_EFFORT_OPTIONS,
@@ -319,6 +323,24 @@ export function SettingsView(props: {
     setProviderSettingsSaveFailed(!saveProviderSettings(next));
   }
 
+  // AI Networkへ共有できるpreset — 実在のproviderに紐づき、かつそのproviderが
+  // mist-network://疑似プロバイダ(ネットワーク由来)でないもの。疑似プロバイダを
+  // 再広告するとそのルームへリクエストがループしてしまうため除外する。
+  const eligiblePresets = useMemo(
+    () =>
+      shared.presets.filter((preset) => {
+        const p = shared.providers.find((entry) => entry.id === preset.providerId);
+        return p !== undefined && !isNetworkProviderBaseUrl(p.baseUrl);
+      }),
+    [shared.presets, shared.providers],
+  );
+
+  function handleToggleShareModel(presetId: string, checked: boolean): void {
+    const current = provider.networkProviderPresetIds;
+    const next = checked ? [...current, presetId] : current.filter((id) => id !== presetId);
+    updateProvider({ ...provider, networkProviderPresetIds: next });
+  }
+
   // Always a read-modify-write against the *current* storage value (never a
   // stale `shared` snapshot) — see llmConfigStore.ts's header for why: a
   // naive save-the-in-memory-state re-persists whatever `shared` happened to
@@ -440,7 +462,17 @@ export function SettingsView(props: {
   // (hooks/useNetworkProviderHost.ts) so it keeps running while this settings
   // screen is closed; props.networkProvider is just the live status to render.
   const target = useMemo(() => resolvePreset(shared), [shared]);
-  const upstreamConfigured = Boolean(target && target.model.trim() && target.baseUrl.trim());
+  // チェックボックスで共有したpresetのうち、実在の接続先を持ち(mist-network://
+  // 疑似プロバイダを除く)モデルが設定済みのものが1つでもあれば、既定プリセット
+  // が未設定でも提供を開始できる(hooks/useNetworkProviderHost.tsのresolveSharedTargets
+  // と同じ判定)。
+  const hasConfiguredSharedPreset = provider.networkProviderPresetIds.some((id) => {
+    const preset = shared.presets.find((p) => p.id === id);
+    if (!preset || !preset.model.trim()) return false;
+    const presetProvider = shared.providers.find((p) => p.id === preset.providerId);
+    return presetProvider !== undefined && presetProvider.baseUrl.trim() !== "" && !isNetworkProviderBaseUrl(presetProvider.baseUrl);
+  });
+  const upstreamConfigured = Boolean(target && target.model.trim() && target.baseUrl.trim()) || hasConfiguredSharedPreset;
 
   // ===== AI接続タブ: 接続先(provider) / モデル(preset) の独立したカードグリッド =====
   // providerId -> fetched models... is delegated entirely to ModelField's own
@@ -580,6 +612,9 @@ export function SettingsView(props: {
     if (provider.workerPresetId === preset.id) badges.push(t("settings.presetBadgeWorker"));
     if (shared.tts?.model && shared.tts.providerId === preset.providerId && shared.tts.model === preset.model) {
       badges.push(t("settings.presetBadgeTts"));
+    }
+    if (provider.networkProviderPresetIds.includes(preset.id)) {
+      badges.push(t("settings.presetBadgeShared"));
     }
     return badges;
   }
@@ -1198,6 +1233,28 @@ export function SettingsView(props: {
                 <p class="settings-role-desc">{t("settings.networkProviderDesc")}</p>
                 {provider.networkProviderEnabled ? (
                   <div class="settings-role-body">
+                    <div class="network-share-models">
+                      <label>{t("settings.networkShareModelsHeading")}</label>
+                      {eligiblePresets.length === 0 ? (
+                        <p class="settings-role-desc">{t("settings.networkShareModelsEmpty")}</p>
+                      ) : (
+                        <div class="network-share-list">
+                          {eligiblePresets.map((preset) => (
+                            <label class="network-share-item" key={preset.id}>
+                              <input
+                                type="checkbox"
+                                checked={provider.networkProviderPresetIds.includes(preset.id)}
+                                onChange={(e) => handleToggleShareModel(preset.id, e.currentTarget.checked)}
+                              />
+                              <span class="network-share-item-label">{preset.label || preset.model}</span>
+                              <span class="network-share-item-model">
+                                {preset.model} ・ {shared.providers.find((p) => p.id === preset.providerId)?.label ?? ""}
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                     <ProviderStatusPanel
                       status={networkProvider.status}
                       statusUpdatedAt={networkProvider.statusUpdatedAt}
