@@ -234,9 +234,12 @@ export function ModelField(props: {
 
 /** Voice picker for the TTS section: mirrors ModelField's UX but sources
  * options from useVoiceOptions(baseUrl, apiKey). Most OpenAI-compatible TTS
- * endpoints don't expose a voices-listing endpoint, so on a fetch error we
- * fall back to OPENAI_TTS_VOICES (the standard OpenAI voice set) instead of
- * leaving the select empty. */
+ * endpoints don't expose a voices-listing endpoint, so when the fetch comes
+ * back empty (mistai's `fetchVoices` resolves `[]` rather than rejecting in
+ * that case — see lib/voices.ts) we fall back to OPENAI_TTS_VOICES (the
+ * standard OpenAI voice set) instead of leaving the select empty. The
+ * `status === "error"` branches stay as a defensive fallback for the (now
+ * unreachable via fetchVoices) hook-level rejection path. */
 function VoiceField(props: {
   value: string;
   baseUrl: string;
@@ -247,7 +250,7 @@ function VoiceField(props: {
   const t = useT();
   const { options, status, refresh } = useVoiceOptions(baseUrl, apiKey);
 
-  const fetchedOrFallback = status === "error" ? OPENAI_TTS_VOICES : options;
+  const fetchedOrFallback = options.length > 0 ? options : OPENAI_TTS_VOICES;
   const selectableOptions = useMemo(() => mergeOptions(value, fetchedOrFallback), [fetchedOrFallback, value]);
   const canFetch = baseUrl.trim().length > 0;
   const statusText =
@@ -256,7 +259,9 @@ function VoiceField(props: {
       : status === "error"
         ? t("settings.voiceErrorFallback")
         : status === "done"
-          ? t("settings.voiceFetched", { count: options.length })
+          ? options.length > 0
+            ? t("settings.voiceFetched", { count: options.length })
+            : t("settings.voiceErrorFallback")
           : "";
 
   return (
@@ -415,6 +420,11 @@ export function SettingsView(props: {
   // ----- AI Network consumer connection lifecycle ---------------------------
   const [consumer, setConsumer] = useState<ConsumerStatus>(() => consumerStatus());
   useEffect(() => onConsumerStatusChange(setConsumer), []);
+  // Whether the AI Network consumer connection is actually live right now —
+  // gates whether network-sourced presets (mist-network:// pseudo-provider)
+  // are selectable in the task pickers below (mirrors tc-translate's
+  // SettingsModal.tsx `networkConnected`).
+  const networkConnected = consumer.phase === "connected";
 
   const consumerRoom = shared.network.roomId.trim();
   useEffect(() => {
@@ -606,6 +616,20 @@ export function SettingsView(props: {
     setEditingPresetId(preset.id);
   }
 
+  // True when `providerId` resolves to the `mist-network://` pseudo-provider
+  // (a model discovered via the AI Network room and synced in by
+  // hooks/useNetworkModelSync.ts), as opposed to a regular HTTP connection
+  // the user configured directly. Mirrors tc-translate's SettingsModal.tsx.
+  function isNetworkPresetProvider(providerId: string): boolean {
+    const p = shared.providers.find((entry) => entry.id === providerId);
+    return p ? isNetworkProviderBaseUrl(p.baseUrl) : false;
+  }
+
+  function isNetworkPreset(presetId: string): boolean {
+    const preset = shared.presets.find((entry) => entry.id === presetId);
+    return preset ? isNetworkPresetProvider(preset.providerId) : false;
+  }
+
   function getPresetBadges(preset: ModelPresetV1): string[] {
     const badges: string[] = [];
     if (shared.defaultPresetId === preset.id) badges.push(t("settings.presetBadgeDefault"));
@@ -614,6 +638,7 @@ export function SettingsView(props: {
     if (shared.tts?.model && shared.tts.providerId === preset.providerId && shared.tts.model === preset.model) {
       badges.push(t("settings.presetBadgeTts"));
     }
+    if (isNetworkPresetProvider(preset.providerId)) badges.push(t("settings.presetBadgeNetwork"));
     if (provider.networkProviderPresetIds.includes(preset.id)) {
       badges.push(t("settings.presetBadgeShared"));
     }
@@ -623,6 +648,10 @@ export function SettingsView(props: {
   function renderProviderRow(llmProvider: LlmProviderV1) {
     const isEditing = editingProviderId === llmProvider.id;
     const inUse = providerInUse(llmProvider.id);
+    const isNetworkProvider = isNetworkProviderBaseUrl(llmProvider.baseUrl);
+    // The raw `mist-network://<room>` host is meaningless to a user - show a
+    // translated note instead, same idea as the badge on network presets.
+    const secondLine = isNetworkProvider ? t("settings.connectionNetworkNote") : getHostLabel(llmProvider.baseUrl);
 
     if (isEditing) {
       return (
@@ -663,10 +692,10 @@ export function SettingsView(props: {
     }
 
     return (
-      <div class="model-row" key={llmProvider.id}>
+      <div class={`model-row${isNetworkProvider ? " model-row-network" : ""}`} key={llmProvider.id}>
         <button type="button" class="model-row-main" onClick={() => handleOpenEditProvider(llmProvider)}>
           <span class="model-row-label">{llmProvider.label || getHostLabel(llmProvider.baseUrl)}</span>
-          <span class="model-row-model">{getHostLabel(llmProvider.baseUrl)}</span>
+          <span class="model-row-model">{secondLine}</span>
         </button>
         <button
           type="button"
@@ -797,8 +826,9 @@ export function SettingsView(props: {
     }
 
     const badges = getPresetBadges(preset);
+    const isNetworkPreset = isNetworkPresetProvider(preset.providerId);
     return (
-      <div class="model-row" key={preset.id}>
+      <div class={`model-row${isNetworkPreset ? " model-row-network" : ""}`} key={preset.id}>
         <button type="button" class="model-row-main" onClick={() => handleOpenEditPreset(preset)}>
           <span class="model-row-label">{preset.label}</span>
           <span class="model-row-model">{preset.model || t("settings.modelUnselected")}</span>
@@ -1285,23 +1315,34 @@ export function SettingsView(props: {
               <span data-tip={t("settings.taskTipDefault")}>{t("settings.taskDefaultLabel")}</span>
               <div class="task-model-fields">
                 <div class="task-model-field">
-                  <select
-                    value={shared.defaultPresetId}
-                    onChange={(e) => {
-                      const defaultPresetId = e.currentTarget.value;
-                      applyLlmConfigUpdate((cfg) => {
-                        cfg.defaultPresetId = defaultPresetId;
-                      });
-                    }}
-                    aria-label={t("settings.taskDefaultLabel")}
-                  >
-                    <option value="">{t("settings.defaultPresetUnset")}</option>
-                    {shared.presets.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.label || p.id}
-                      </option>
-                    ))}
-                  </select>
+                  <div class="task-model-select-row">
+                    <select
+                      value={shared.defaultPresetId}
+                      onChange={(e) => {
+                        const defaultPresetId = e.currentTarget.value;
+                        applyLlmConfigUpdate((cfg) => {
+                          cfg.defaultPresetId = defaultPresetId;
+                        });
+                      }}
+                      aria-label={t("settings.taskDefaultLabel")}
+                    >
+                      <option value="">{t("settings.defaultPresetUnset")}</option>
+                      {shared.presets
+                        .filter((p) => networkConnected || !isNetworkPresetProvider(p.providerId))
+                        .map((p) => (
+                          <option
+                            key={p.id}
+                            value={p.id}
+                            class={isNetworkPresetProvider(p.providerId) ? "option-network" : undefined}
+                          >
+                            {p.label || p.id}
+                          </option>
+                        ))}
+                    </select>
+                    {networkConnected && isNetworkPreset(shared.defaultPresetId) ? (
+                      <span class="task-badge task-badge-network">{t("settings.presetBadgeNetwork")}</span>
+                    ) : null}
+                  </div>
                 </div>
                 {renderReasoningEffortSelect(defaultResolved)}
               </div>
@@ -1311,18 +1352,29 @@ export function SettingsView(props: {
               <span data-tip={t("settings.taskTipOrchestrator")}>{t("settings.taskOrchestratorLabel")}</span>
               <div class="task-model-fields">
                 <div class="task-model-field">
-                  <select
-                    value={provider.orchestratorPresetId}
-                    onChange={(e) => updateProvider({ ...provider, orchestratorPresetId: e.currentTarget.value })}
-                    aria-label={t("settings.taskOrchestratorLabel")}
-                  >
-                    <option value="">{t("settings.taskFollowDefault")}</option>
-                    {shared.presets.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.label || p.id}
-                      </option>
-                    ))}
-                  </select>
+                  <div class="task-model-select-row">
+                    <select
+                      value={provider.orchestratorPresetId}
+                      onChange={(e) => updateProvider({ ...provider, orchestratorPresetId: e.currentTarget.value })}
+                      aria-label={t("settings.taskOrchestratorLabel")}
+                    >
+                      <option value="">{t("settings.taskFollowDefault")}</option>
+                      {shared.presets
+                        .filter((p) => networkConnected || !isNetworkPresetProvider(p.providerId))
+                        .map((p) => (
+                          <option
+                            key={p.id}
+                            value={p.id}
+                            class={isNetworkPresetProvider(p.providerId) ? "option-network" : undefined}
+                          >
+                            {p.label || p.id}
+                          </option>
+                        ))}
+                    </select>
+                    {networkConnected && isNetworkPreset(provider.orchestratorPresetId) ? (
+                      <span class="task-badge task-badge-network">{t("settings.presetBadgeNetwork")}</span>
+                    ) : null}
+                  </div>
                 </div>
                 {renderReasoningEffortSelect(orchestratorResolved)}
               </div>
@@ -1332,18 +1384,29 @@ export function SettingsView(props: {
               <span data-tip={t("settings.taskTipWorker")}>{t("settings.taskWorkerLabel")}</span>
               <div class="task-model-fields">
                 <div class="task-model-field">
-                  <select
-                    value={provider.workerPresetId}
-                    onChange={(e) => updateProvider({ ...provider, workerPresetId: e.currentTarget.value })}
-                    aria-label={t("settings.taskWorkerLabel")}
-                  >
-                    <option value="">{t("settings.taskFollowDefault")}</option>
-                    {shared.presets.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.label || p.id}
-                      </option>
-                    ))}
-                  </select>
+                  <div class="task-model-select-row">
+                    <select
+                      value={provider.workerPresetId}
+                      onChange={(e) => updateProvider({ ...provider, workerPresetId: e.currentTarget.value })}
+                      aria-label={t("settings.taskWorkerLabel")}
+                    >
+                      <option value="">{t("settings.taskFollowDefault")}</option>
+                      {shared.presets
+                        .filter((p) => networkConnected || !isNetworkPresetProvider(p.providerId))
+                        .map((p) => (
+                          <option
+                            key={p.id}
+                            value={p.id}
+                            class={isNetworkPresetProvider(p.providerId) ? "option-network" : undefined}
+                          >
+                            {p.label || p.id}
+                          </option>
+                        ))}
+                    </select>
+                    {networkConnected && isNetworkPreset(provider.workerPresetId) ? (
+                      <span class="task-badge task-badge-network">{t("settings.presetBadgeNetwork")}</span>
+                    ) : null}
+                  </div>
                 </div>
                 {renderReasoningEffortSelect(workerResolved)}
               </div>
@@ -1353,19 +1416,30 @@ export function SettingsView(props: {
               <span data-tip={t("settings.taskTipTts")}>{t("settings.taskTtsLabel")}</span>
               <div class="task-model-fields">
                 <div class="task-model-field">
-                  <select
-                    value={ttsModelRaw === "" ? "" : matchedTtsPreset ? matchedTtsPreset.id : "__current__"}
-                    onChange={(e) => handleTtsPickerChange(e.currentTarget.value)}
-                    aria-label={t("settings.taskTtsLabel")}
-                  >
-                    <option value="">{t("settings.ttsPickerBrowserOption")}</option>
-                    {ttsModelRaw && !matchedTtsPreset ? <option value="__current__">{ttsModelRaw}</option> : null}
-                    {shared.presets.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.label || p.model || p.id}
-                      </option>
-                    ))}
-                  </select>
+                  <div class="task-model-select-row">
+                    <select
+                      value={ttsModelRaw === "" ? "" : matchedTtsPreset ? matchedTtsPreset.id : "__current__"}
+                      onChange={(e) => handleTtsPickerChange(e.currentTarget.value)}
+                      aria-label={t("settings.taskTtsLabel")}
+                    >
+                      <option value="">{t("settings.ttsPickerBrowserOption")}</option>
+                      {ttsModelRaw && !matchedTtsPreset ? <option value="__current__">{ttsModelRaw}</option> : null}
+                      {shared.presets
+                        .filter((p) => networkConnected || !isNetworkPresetProvider(p.providerId))
+                        .map((p) => (
+                          <option
+                            key={p.id}
+                            value={p.id}
+                            class={isNetworkPresetProvider(p.providerId) ? "option-network" : undefined}
+                          >
+                            {p.label || p.model || p.id}
+                          </option>
+                        ))}
+                    </select>
+                    {networkConnected && matchedTtsPreset && isNetworkPreset(matchedTtsPreset.id) ? (
+                      <span class="task-badge task-badge-network">{t("settings.presetBadgeNetwork")}</span>
+                    ) : null}
+                  </div>
                 </div>
                 {ttsModelRaw !== "" ? (
                   <div class="task-model-field">

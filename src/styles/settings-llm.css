@@ -125,6 +125,17 @@
   white-space: nowrap;
 }
 
+/* AI Networkルーム由来のカード（room内の他participantが提供するモデル/
+   接続）を、自分で設定したもの（.settings-flat-section-connection /
+   -models それぞれの背景tint）と一目で区別するための強調。破線のaccent枠線
+   を足す。セレクタの詳細度を .settings-flat-section-connection/-models
+   .model-row（クラス2つ）より高く（.settings-flat-section .model-row.model-row-network、
+   クラス3つ）しているため、ソース順に関わらずこちらが勝つ。 */
+.settings-flat-section .model-row.model-row-network {
+  border: 1px dashed var(--primary);
+  background: var(--primary-soft);
+}
+
 /* カード右上に置く×削除。 */
 .model-row-remove {
   position: absolute;
@@ -342,6 +353,34 @@
 .task-model-field select {
   width: 100%;
   min-width: 0;
+}
+
+/* select本体とその横に添えるNetworkバッジ(あれば)を1行に並べる。バッジが
+   無い行はselectだけがそのまま100%幅で並ぶので、既存レイアウトへの影響はない。 */
+.task-model-select-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.task-model-select-row select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* AI Networkルーム提供のプリセットが選ばれているタスクselectに添える印。
+   .task-badgeと同じprimaryトーンで統一し、AI接続タブのNetworkバッジと
+   見た目を揃える。 */
+.task-model-select-row .task-badge-network {
+  flex-shrink: 0;
+}
+
+/* select内、AI Networkルーム由来のoptionをテキスト色で区別する。ネイティブ
+   optionはbackground/borderなど装飾がほぼ効かないブラウザが多いため、
+   colorのみ .model-row-network / task-badge と同じprimaryトーンで当てる。 */
+option.option-network {
+  color: var(--primary);
 }
 
 /* --- AI Networkタブのロールカード(consumer/provider) ------------------------ */
