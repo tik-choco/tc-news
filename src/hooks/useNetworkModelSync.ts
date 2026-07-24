@@ -35,7 +35,7 @@ import { emptyLlmConfig, ensurePreset, ensureProvider, loadLlmConfig, normalizeB
 import type { SharedLlmConfigV1 } from "../lib/llmConfig";
 import { subscribeLlmConfigStore, updateLlmConfig } from "../lib/llmConfigStore";
 import { loadProviderSettings, subscribeProviderSettings } from "../lib/llmSettings";
-import { NETWORK_PROVIDER_LABEL, networkProviderBaseUrl } from "../lib/networkModels";
+import { NETWORK_PROVIDER_LABEL, networkProviderBaseUrl, safeDefaultPresetFallback } from "../lib/networkModels";
 import { consumerStatus, onConsumerStatusChange } from "../lib/network";
 
 export function useNetworkModelSync(): void {
@@ -102,7 +102,7 @@ export function useNetworkModelSync(): void {
         if (!stale) return;
         config.presets = config.presets.filter((p) => p.providerId !== stale.id);
         if (config.defaultPresetId && !config.presets.some((p) => p.id === config.defaultPresetId)) {
-          config.defaultPresetId = config.presets[0]?.id ?? "";
+          config.defaultPresetId = safeDefaultPresetFallback(config);
         }
         config.providers = config.providers.filter((p) => p.id !== stale.id);
         return;
@@ -118,7 +118,7 @@ export function useNetworkModelSync(): void {
       if (stalePresetIds.size > 0) {
         config.presets = config.presets.filter((p) => !stalePresetIds.has(p.id));
         if (config.defaultPresetId && stalePresetIds.has(config.defaultPresetId)) {
-          config.defaultPresetId = config.presets[0]?.id ?? "";
+          config.defaultPresetId = safeDefaultPresetFallback(config);
         }
       }
     });

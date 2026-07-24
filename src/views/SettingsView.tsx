@@ -70,7 +70,7 @@ import {
   type SharedLlmConfigV1,
 } from "../lib/llmConfig";
 import { isLlmConfigCorrupted, subscribeLlmConfigStore, updateLlmConfig } from "../lib/llmConfigStore";
-import { isNetworkProviderBaseUrl } from "../lib/networkModels";
+import { isNetworkProviderBaseUrl, safeDefaultPresetFallback } from "../lib/networkModels";
 import {
   DEFAULT_REASONING_EFFORT,
   REASONING_EFFORT_OPTIONS,
@@ -396,9 +396,12 @@ export function SettingsView(props: {
     applyLlmConfigUpdate((cfg) => {
       cfg.presets = cfg.presets.filter((p) => p.id !== id);
       // 削除したプリセットが既定だった場合、"" にせず残っているプリセットの
-      // 先頭を新しい既定に昇格させる(残りがなければ ""=未設定)。
+      // うちmist-network://配下ではない最初のものを新しい既定に昇格させる
+      // (残りがなければ ""=未設定)。config.presets[0]をそのまま使うと、
+      // 先頭がAI Network疑似プロバイダのpresetだった場合に既定が無言で
+      // ネットワーク経由へ切り替わってしまう(safeDefaultPresetFallback参照)。
       if (cfg.defaultPresetId === id) {
-        cfg.defaultPresetId = cfg.presets[0]?.id ?? "";
+        cfg.defaultPresetId = safeDefaultPresetFallback(cfg);
       }
     });
     // 役割ポインタが消えたプリセットを指したままにしない("" = 既定に従う)。
