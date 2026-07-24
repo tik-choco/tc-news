@@ -3,6 +3,8 @@
 // SettingsView.tsx冒頭コメント参照)。mist-network://疑似プロバイダは、ルーム
 // 側が公開しているモデルをローカルのtc-shared-llm-config-v1へ取り込む際の
 // provider baseUrlとして使われる(hooks/useNetworkModelSync.ts)。
+import type { SharedLlmConfigV1 } from "./llmConfig";
+
 export const NETWORK_PROVIDER_LABEL = "AI Network";
 export const NETWORK_PROVIDER_URL_PREFIX = "mist-network://";
 
@@ -25,4 +27,26 @@ export function isNetworkProviderBaseUrl(baseUrl: string): boolean {
  */
 export function advertisedModelName(target: { label: string; model: string }): string {
   return target.label.trim() || target.model;
+}
+
+/**
+ * `config.defaultPresetId`の再割り当て候補として安全なpresetを選ぶ:
+ * `mist-network://`疑似プロバイダ配下(このルームのものに限らず、他アプリ/他
+ * ルームが残した分も含む)にぶら下がっていない最初のpreset。無ければ ""(未
+ * 設定)を返す — `config.presets[0]`をそのまま採用しない。
+ *
+ * `tc-shared-llm-config-v1`はオリジン共有なので、既定presetが失効した際に
+ * 単純に配列先頭を新しい既定へ昇格させると、その先頭がたまたま(このルーム
+ * 自身がミラーしたものであれ、別アプリ/別ルームが残したものであれ)AI
+ * Network経由のpresetだった場合、providerId未指定のタスク(TTS/STTなど。
+ * resolvePreset経由でdefaultPresetIdにフォールバックする)がユーザーの意図
+ * しないネットワーク経由へ無言で切り替わってしまう。tc-lingoの
+ * `safeDefaultPresetFallback`(hooks/useNetworkModelSync.ts)と同じ方針。
+ */
+export function safeDefaultPresetFallback(config: SharedLlmConfigV1): string {
+  const nonNetwork = config.presets.find((p) => {
+    const provider = config.providers.find((pr) => pr.id === p.providerId);
+    return provider !== undefined && !isNetworkProviderBaseUrl(provider.baseUrl);
+  });
+  return nonNetwork?.id ?? "";
 }
