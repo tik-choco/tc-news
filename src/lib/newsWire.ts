@@ -44,6 +44,7 @@
 import type { NewsArticle, ProgramSegment, RadioProgram } from "../types";
 import { kvGetOrMigrate, kvSetSync } from "./kvStore";
 import { safeSetItem } from "./safeStorage";
+import type { DelegationV1 } from "@tik-choco/mistai/identity";
 
 /** 全ユーザー共通のグローバル記事ルーム。ファミリー他アプリもこの定数値で購読できる(well-known)。 */
 export const GLOBAL_ARTICLES_ROOM_ID = "tc-global-articles";
@@ -57,11 +58,17 @@ export interface ArticleWire extends Record<string, unknown> {
   cid: string; // NewsArticle全体のJSONのCID
   signature: string;
   // 発行元アプリ名(現状 "tc-news")。optional: 既存クライアントのwireには無い
-  // ので、無くても有効なwireとして扱う(後方互換)。wireSign.ts の
-  // signWireFields/verifyWire は signature を除く全フィールドを対称に
+  // ので、無くても有効なwireとして扱う(後方互換)。wireSign.tsの
+  // signWire/verifyWire は signature を除く全フィールドを対称に
   // stableStringify するため、このフィールドを足しても署名/検証のペアは
   // 崩れない(列挙方式ではないので追加・削除だけで壊れない)。
   fromApp?: string;
+  // DID委譲チェーン(protocol/docs/data-contracts/docs/did-delegation.md)。
+  // fromIdの委譲元rootが有効なとき、送信側(wireSign.tsのsignWire)が署名前に
+  // 自動で埋める。fromAppと同じ理由でoptional: 委譲していない送信者のwireには
+  // 無く、isArticleWireガードもこのフィールドの有無で弾かない(未知フィールド
+  // として許容 — 古いクライアントが読んでも無視されるだけで壊れない)。
+  delegation?: DelegationV1;
 }
 
 export interface HistoryRequestWire extends Record<string, unknown> {
@@ -86,6 +93,9 @@ export interface TranslationWire extends Record<string, unknown> {
   cid: string; // TranslationPayload全体のJSONのCID
   signature: string;
   fromApp?: string;
+  // DID委譲チェーン。ArticleWireのdelegationフィールドと同じ理由・同じ
+  // 後方互換の扱い(未知フィールドとして許容)。
+  delegation?: DelegationV1;
 }
 
 /** TranslationWire.cid が指す本体。 */
@@ -116,6 +126,9 @@ export interface ReactionWire extends Record<string, unknown> {
   timestamp: number;
   signature: string;
   fromApp?: string;
+  // DID委譲チェーン。ArticleWireのdelegationフィールドと同じ理由・同じ
+  // 後方互換の扱い(未知フィールドとして許容)。
+  delegation?: DelegationV1;
 }
 
 /**
@@ -134,6 +147,9 @@ export interface ViewWire extends Record<string, unknown> {
   timestamp: number;
   signature: string;
   fromApp?: string;
+  // DID委譲チェーン。ArticleWireのdelegationフィールドと同じ理由・同じ
+  // 後方互換の扱い(未知フィールドとして許容)。
+  delegation?: DelegationV1;
 }
 
 /**
@@ -149,6 +165,9 @@ export interface ProgramWire extends Record<string, unknown> {
   cid: string; // RadioProgram全体のJSONのCID
   signature: string;
   fromApp?: string;
+  // DID委譲チェーン。ArticleWireのdelegationフィールドと同じ理由・同じ
+  // 後方互換の扱い(未知フィールドとして許容)。
+  delegation?: DelegationV1;
 }
 
 /**
@@ -170,6 +189,9 @@ export interface ProgramTranslationWire extends Record<string, unknown> {
   cid: string; // ProgramTranslationContent全体のJSONのCID
   signature: string;
   fromApp?: string;
+  // DID委譲チェーン。ArticleWireのdelegationフィールドと同じ理由・同じ
+  // 後方互換の扱い(未知フィールドとして許容)。
+  delegation?: DelegationV1;
 }
 
 /** ProgramTranslationWire.cid が指す本体。 */
@@ -188,7 +210,7 @@ export interface ProgramTranslationContent extends Record<string, unknown> {
 /**
  * フィードURLをP2P共有するワイヤ。url/labelはCID化するには小さすぎるため、
  * ArticleWire/ProgramWireと違い本体をそのままワイヤに載せる(署名対象にも
- * url/labelを含む — wireSign.tsのsignWireFields/verifyWireはsignatureを除く
+ * url/labelを含む — wireSign.tsのsignWire/verifyWireはsignatureを除く
  * 全フィールドを対称にstableStringifyするので、これらのフィールドを検証すれば
  * 改ざんを検出できる)。同じURLが複数回共有され得るため、idはurl由来ではなく
  * wire固有のuuid(newFeedShareWireId)。
@@ -203,6 +225,9 @@ export interface FeedShareWire extends Record<string, unknown> {
   timestamp: number;
   signature: string;
   fromApp?: string;
+  // DID委譲チェーン。ArticleWireのdelegationフィールドと同じ理由・同じ
+  // 後方互換の扱い(未知フィールドとして許容)。
+  delegation?: DelegationV1;
 }
 
 const SHARED_ARTICLES_KEY_PREFIX = "tc-news:shared:";

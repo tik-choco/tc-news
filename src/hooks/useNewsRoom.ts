@@ -15,7 +15,7 @@ import {
   EVENT_PEER_DISCONNECTED,
 } from "../lib/mistClient";
 import { ensureDidIdentity } from "../crypto/didIdentity";
-import { signWireFields, verifyWire } from "../lib/wireSign";
+import { localSenderId, resolveSender, signWire } from "../lib/wireSign";
 import {
   appendFeedShareLog,
   appendProgramLog,
@@ -282,7 +282,13 @@ export function useNewsRoom(roomId: string, userName: string, enabled = true) {
     async function hydrateArticle(wire: ArticleWire) {
       try {
         if (sharedArticlesRef.current.some((a) => a.id === wire.id)) return; // duplicate, ignore
-        if (!(await verifyWire(wire))) {
+        // resolveSender still verifies wire.signature first (returns null on
+        // failure, discarded below exactly like the old verifyWire check) —
+        // its extra work (resolving a DID delegation to root) isn't needed
+        // here since hydrateArticle has no same-person dedup, but every
+        // hydrate* function goes through resolveSender uniformly per
+        // did-delegation.md's "受信側" steps.
+        if (!(await resolveSender(wire))) {
           console.warn("discarding article wire with invalid signature", wire.id);
           return;
         }
@@ -305,7 +311,9 @@ export function useNewsRoom(roomId: string, userName: string, enabled = true) {
     async function hydrateTranslation(wire: TranslationWire) {
       try {
         if (getTranslation(wire.articleId, wire.lang)) return; // already have one, skip the fetch entirely
-        if (!(await verifyWire(wire))) {
+        // See hydrateArticle's comment: resolveSender subsumes verifyWire
+        // (still discards on a bad signature); no same-person dedup here.
+        if (!(await resolveSender(wire))) {
           console.warn("discarding translation wire with invalid signature", wire.id);
           return;
         }
@@ -341,7 +349,9 @@ export function useNewsRoom(roomId: string, userName: string, enabled = true) {
     async function hydrateProgram(wire: ProgramWire) {
       try {
         if (sharedProgramsRef.current.some((p) => p.id === wire.id)) return; // duplicate, ignore
-        if (!(await verifyWire(wire))) {
+        // See hydrateArticle's comment: resolveSender subsumes verifyWire
+        // (still discards on a bad signature); no same-person dedup here.
+        if (!(await resolveSender(wire))) {
           console.warn("discarding program wire with invalid signature", wire.id);
           return;
         }
@@ -378,7 +388,9 @@ export function useNewsRoom(roomId: string, userName: string, enabled = true) {
     // loadProgramTranslationLog below).
     async function hydrateProgramTranslation(wire: ProgramTranslationWire) {
       try {
-        if (!(await verifyWire(wire))) {
+        // See hydrateArticle's comment: resolveSender subsumes verifyWire
+        // (still discards on a bad signature); no same-person dedup here.
+        if (!(await resolveSender(wire))) {
           console.warn("discarding program-translation wire with invalid signature", wire.id);
           return;
         }
@@ -419,7 +431,9 @@ export function useNewsRoom(roomId: string, userName: string, enabled = true) {
     async function hydrateFeedShare(wire: FeedShareWire) {
       try {
         if (sharedFeedsRef.current.some((w) => w.id === wire.id)) return; // duplicate wire, ignore
-        if (!(await verifyWire(wire))) {
+        // See hydrateArticle's comment: resolveSender subsumes verifyWire
+        // (still discards on a bad signature); no same-person dedup here.
+        if (!(await resolveSender(wire))) {
           console.warn("discarding feed-share wire with invalid signature", wire.id);
           return;
         }
@@ -439,18 +453,33 @@ export function useNewsRoom(roomId: string, userName: string, enabled = true) {
     // replay to newcomers.
     async function hydrateReaction(wire: ReactionWire) {
       try {
-        if (!(await verifyWire(wire))) {
+        const resolved = await resolveSender(wire);
+        if (!resolved) {
           console.warn("discarding reaction wire with invalid signature", wire.id);
           return;
         }
         if (cancelled) return;
         if (!(REACTION_KINDS as readonly string[]).includes(wire.kind)) return; // unknown kind, ignore
         if (wire.targetType !== "article" && wire.targetType !== "program") return;
+        // 同一人物判定はroot基準(resolved.id): DID委譲(did-delegation.md)が
+        // 有効なfromId(leaf)はresolved.idでrootに解決されるため、同じ人が
+        // 別オリジン/デバイス(=別leaf)から反応しても1回にデデュープできる。
+        // 委譲が無い/無効なときはresolved.id === wire.fromIdなので従来と
+        // 同じ挙動(reactionStore.addReactionは(targetId, kind, fromId)で
+        // デデュープする)。fromNameは署名した鍵の表示名なのでwire.fromNameの
+        // ままでよい(root/leafどちらで集計するかとは無関係)。
+        //
+        // 注意: 既存ユーザーのlocalStorage上のリアクション記録はleaf DIDで
+        // キーされている。委譲を受けた直後の1回だけ、同じ対象への既存の反応が
+        // (leafキーの古い記録とrootキーの新しい記録が別エントリになるため)
+        // 再カウントされ得る。委譲は失効リストを持たない設計(短命TTLで回す)
+        // なので過去分をrootへ書き換える移行処理は行わず、この1回限りのズレは
+        // 許容する。
         const isNew = addReaction({
           targetId: wire.targetId,
           targetType: wire.targetType,
           kind: wire.kind as ReactionKind,
-          fromId: wire.fromId,
+          fromId: resolved.id,
           fromName: wire.fromName,
           timestamp: wire.timestamp,
         });
@@ -465,16 +494,20 @@ export function useNewsRoom(roomId: string, userName: string, enabled = true) {
     // a genuinely-new view is appended to its own replay log.
     async function hydrateView(wire: ViewWire) {
       try {
-        if (!(await verifyWire(wire))) {
+        const resolved = await resolveSender(wire);
+        if (!resolved) {
           console.warn("discarding view wire with invalid signature", wire.id);
           return;
         }
         if (cancelled) return;
         if (wire.targetType !== "article" && wire.targetType !== "program") return;
+        // 同一人物判定はroot基準(resolved.id)。理由・移行期の再カウントに
+        // ついての注意点はhydrateReactionの同じコメントを参照(viewStoreは
+        // reactionStoreと対称の(targetId, fromId)デデュープ方針)。
         const isNew = addView({
           targetId: wire.targetId,
           targetType: wire.targetType,
-          fromId: wire.fromId,
+          fromId: resolved.id,
           timestamp: wire.timestamp,
         });
         if (isNew) appendViewLog(roomId, wire);
@@ -686,7 +719,7 @@ export function useNewsRoom(roomId: string, userName: string, enabled = true) {
       // verification.
       fromApp: "tc-news",
     };
-    const wire: ArticleWire = { ...unsigned, signature: await signWireFields(unsigned) };
+    const wire = (await signWire(unsigned)) as ArticleWire;
     node.sendMessage(null, wire, DELIVERY_RELIABLE, roomIdRef.current);
     appendWireLog(roomIdRef.current, wire);
     const shared: NewsArticle = { ...article, cid, shared: true };
@@ -722,7 +755,7 @@ export function useNewsRoom(roomId: string, userName: string, enabled = true) {
       cid,
       fromApp: "tc-news",
     };
-    const wire: TranslationWire = { ...unsigned, signature: await signWireFields(unsigned) };
+    const wire = (await signWire(unsigned)) as TranslationWire;
     node.sendMessage(null, wire, DELIVERY_RELIABLE, roomIdRef.current);
     appendWireLog(roomIdRef.current, wire);
     return saveTranslation({
@@ -765,7 +798,7 @@ export function useNewsRoom(roomId: string, userName: string, enabled = true) {
       cid,
       fromApp: "tc-news",
     };
-    const wire: ProgramWire = { ...unsigned, signature: await signWireFields(unsigned) };
+    const wire = (await signWire(unsigned)) as ProgramWire;
     node.sendMessage(null, wire, DELIVERY_RELIABLE, roomIdRef.current);
     appendProgramLog(roomIdRef.current, wire);
     const next = [stamped, ...sharedProgramsRef.current.filter((p) => p.id !== program.id)];
@@ -806,7 +839,7 @@ export function useNewsRoom(roomId: string, userName: string, enabled = true) {
       cid,
       fromApp: "tc-news",
     };
-    const wire: ProgramTranslationWire = { ...unsigned, signature: await signWireFields(unsigned) };
+    const wire = (await signWire(unsigned)) as ProgramTranslationWire;
     node.sendMessage(null, wire, DELIVERY_RELIABLE, roomIdRef.current);
     appendProgramTranslationLog(roomIdRef.current, wire);
     // Unlike saveTranslation (translationStore.ts), saveProgramTranslation
@@ -848,14 +881,17 @@ export function useNewsRoom(roomId: string, userName: string, enabled = true) {
       timestamp: Date.now(),
       fromApp: "tc-news",
     };
-    const wire: ReactionWire = { ...unsigned, signature: await signWireFields(unsigned) };
+    const wire = (await signWire(unsigned)) as ReactionWire;
     node.sendMessage(null, wire, DELIVERY_RELIABLE, roomIdRef.current);
     appendReactionLog(roomIdRef.current, wire);
     addReaction({
       targetId,
       targetType,
       kind,
-      fromId: identity.did,
+      // 人単位のキーなので leaf ではなく localSenderId()(委譲があれば root)。
+      // hydrateReaction 側が resolved.id で記録するので、ここを identity.did に
+      // すると他ピア経由で戻ってきた自分のワイヤが別人扱いになり二重計上される。
+      fromId: await localSenderId(),
       fromName: userNameRef.current,
       timestamp: unsigned.timestamp,
     });
@@ -871,7 +907,10 @@ export function useNewsRoom(roomId: string, userName: string, enabled = true) {
   // traffic optimization on top of it.
   async function sendView(targetId: string, targetType: "article" | "program"): Promise<void> {
     const identity = await ensureDidIdentity();
-    if (hasViewed(targetId, identity.did)) return;
+    // hasViewed / addView は人単位のキーなので localSenderId()(委譲があれば
+    // root)で引く。ワイヤの fromId は署名鍵 = leaf のままである点に注意。
+    const senderId = await localSenderId();
+    if (hasViewed(targetId, senderId)) return;
     const node = await getNode();
     const unsigned = {
       type: "tc-news:view" as const,
@@ -883,13 +922,13 @@ export function useNewsRoom(roomId: string, userName: string, enabled = true) {
       timestamp: Date.now(),
       fromApp: "tc-news",
     };
-    const wire: ViewWire = { ...unsigned, signature: await signWireFields(unsigned) };
+    const wire = (await signWire(unsigned)) as ViewWire;
     node.sendMessage(null, wire, DELIVERY_RELIABLE, roomIdRef.current);
     appendViewLog(roomIdRef.current, wire);
     addView({
       targetId,
       targetType,
-      fromId: identity.did,
+      fromId: senderId,
       timestamp: unsigned.timestamp,
     });
   }
@@ -911,7 +950,7 @@ export function useNewsRoom(roomId: string, userName: string, enabled = true) {
       timestamp: Date.now(),
       fromApp: "tc-news",
     };
-    const wire: FeedShareWire = { ...unsigned, signature: await signWireFields(unsigned) };
+    const wire = (await signWire(unsigned)) as FeedShareWire;
     node.sendMessage(null, wire, DELIVERY_RELIABLE, roomIdRef.current);
     appendFeedShareLog(roomIdRef.current, wire);
     const next = [wire, ...sharedFeedsRef.current.filter((w) => w.id !== wire.id)];

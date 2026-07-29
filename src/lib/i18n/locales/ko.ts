@@ -217,6 +217,16 @@ export const ko: Messages = {
     showMediaPreviews: "썸네일·링크 미리보기 표시",
     showMediaPreviewsHint: "피드나 출처 링크 페이지에서 OGP 정보(이미지·동영상)를 자동으로 가져와 표시합니다. 가져올 때 CORS 프록시를 사용할 수 있습니다.",
 
+    didSectionHeading: "다른 tc-* 앱을 같은 사용자로 취급하기",
+    didSectionHint: "mistl에서 「mistl key pair」를 실행하고 표시된 코드를 입력하세요.",
+    didStatusNoneDetail: "위임 없음. 이 기기 고유 ID: {did}",
+    didStatusActiveDetail: "위임됨. 공통 ID: {did} (만료: {expiry})",
+    didPairingCodeLabel: "페어링 코드",
+    didPairingCodePlaceholder: "XXXX-XXXX-XXXX-XXXX",
+    didPairingButton: "페어링",
+    didPairingPending: "페어링 중...",
+    didPairingUnknownError: "페어링에 실패했습니다.",
+
     connectionHint: "기사 생성·번역·프로그램 낭독에 사용할 연결과 모델입니다. 동일 오리진의 다른 tik-choco 앱과도 공유됩니다.",
     connectionsHeading: "연결",
     addConnectionTile: "연결 추가",

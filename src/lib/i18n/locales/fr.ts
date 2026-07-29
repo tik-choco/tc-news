@@ -225,6 +225,16 @@ export const fr: Messages = {
     showMediaPreviewsHint:
       "Récupère et affiche automatiquement les données OGP (images et vidéos) des flux et des pages de liens sources. Peut utiliser le proxy CORS pour cela.",
 
+    didSectionHeading: "Traiter les autres apps tc-* comme le même utilisateur",
+    didSectionHint: "Exécutez « mistl key pair » dans mistl et saisissez le code affiché.",
+    didStatusNoneDetail: "Aucune délégation. ID de cet appareil : {did}",
+    didStatusActiveDetail: "Délégué. ID partagé : {did} (expire le {expiry})",
+    didPairingCodeLabel: "Code de jumelage",
+    didPairingCodePlaceholder: "XXXX-XXXX-XXXX-XXXX",
+    didPairingButton: "Jumeler",
+    didPairingPending: "Jumelage...",
+    didPairingUnknownError: "Échec du jumelage.",
+
     connectionHint:
       "Les connexions et modèles utilisés pour la génération d'articles, la traduction et la narration des programmes. Partagés avec les autres apps tik-choco sur la même origine.",
     connectionsHeading: "Connexions",

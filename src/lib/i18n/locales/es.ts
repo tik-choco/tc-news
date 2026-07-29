@@ -225,6 +225,16 @@ export const es: Messages = {
     showMediaPreviewsHint:
       "Obtiene y muestra automáticamente datos OGP (imágenes y vídeos) de las fuentes y las páginas de enlaces de origen. Puede usar el proxy CORS para obtenerlos.",
 
+    didSectionHeading: "Tratar otras apps tc-* como el mismo usuario",
+    didSectionHint: "Ejecuta «mistl key pair» en mistl e introduce el código que muestra.",
+    didStatusNoneDetail: "Sin delegación. ID de este dispositivo: {did}",
+    didStatusActiveDetail: "Delegado. ID compartido: {did} (expira: {expiry})",
+    didPairingCodeLabel: "Código de emparejamiento",
+    didPairingCodePlaceholder: "XXXX-XXXX-XXXX-XXXX",
+    didPairingButton: "Emparejar",
+    didPairingPending: "Emparejando...",
+    didPairingUnknownError: "Error al emparejar.",
+
     connectionHint:
       "Las conexiones y modelos usados para generar artículos, traducir y narrar programas. Se comparten con otras apps tik-choco en el mismo origen.",
     connectionsHeading: "Conexiones",
