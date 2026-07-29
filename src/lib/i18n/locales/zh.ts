@@ -216,6 +216,16 @@ export const zh: Messages = {
     showMediaPreviews: "显示缩略图和链接预览",
     showMediaPreviewsHint: "自动获取并显示订阅源或来源链接页面的 OGP 信息(图片、视频)。获取时可能会使用 CORS 代理。",
 
+    didSectionHeading: "将其他 tc-* 应用视为同一用户",
+    didSectionHint: "在 mistl 中运行「mistl key pair」,然后输入显示的配对码。",
+    didStatusNoneDetail: "未委托。此设备的 ID:{did}",
+    didStatusActiveDetail: "已委托。共用 ID:{did}(有效期至 {expiry})",
+    didPairingCodeLabel: "配对码",
+    didPairingCodePlaceholder: "XXXX-XXXX-XXXX-XXXX",
+    didPairingButton: "配对",
+    didPairingPending: "配对中…",
+    didPairingUnknownError: "配对失败。",
+
     connectionHint: "用于生成文章、翻译和节目朗读的连接与模型。会与同源的其他 tik-choco 应用共享。",
     connectionsHeading: "连接",
     addConnectionTile: "添加连接",

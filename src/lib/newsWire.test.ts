@@ -368,6 +368,18 @@ describe("isFeedShareWire", () => {
     expect(isFeedShareWire(makeFeedShareWire({ fromApp: "tc-news" }))).toBe(true);
   });
 
+  it("accepts a wire with a delegation field (DID delegation chain, did-delegation.md) — optional, unknown-field back-compat like fromApp", () => {
+    const delegation = {
+      v: 1,
+      root: "did:key:root",
+      leaf: "did:key:alice",
+      iat: "2026-01-01T00:00:00.000Z",
+      exp: "2026-03-01T00:00:00.000Z",
+      sig: "sig",
+    };
+    expect(isFeedShareWire({ ...makeFeedShareWire(), delegation })).toBe(true);
+  });
+
   it("rejects a wire with the wrong type discriminant", () => {
     expect(isFeedShareWire({ ...makeFeedShareWire(), type: "tc-news:program" })).toBe(false);
   });
@@ -490,6 +502,18 @@ describe("isProgramTranslationWire", () => {
 
   it("accepts a wire with a string fromApp", () => {
     expect(isProgramTranslationWire(makeProgramTranslationWire({ fromApp: "tc-news" }))).toBe(true);
+  });
+
+  it("accepts a wire with a delegation field (DID delegation chain, did-delegation.md) — optional, unknown-field back-compat like fromApp", () => {
+    const delegation = {
+      v: 1,
+      root: "did:key:root",
+      leaf: "did:key:alice",
+      iat: "2026-01-01T00:00:00.000Z",
+      exp: "2026-03-01T00:00:00.000Z",
+      sig: "sig",
+    };
+    expect(isProgramTranslationWire({ ...makeProgramTranslationWire(), delegation })).toBe(true);
   });
 
   it("rejects a wire with the wrong type discriminant", () => {

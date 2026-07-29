@@ -41,6 +41,17 @@ const ja = {
   showMediaPreviewsHint:
     "フィードや出典リンクのページからOGP情報(画像・動画)を自動取得して表示します。取得にCORSプロキシを使うことがあります。",
 
+  // ----- DID委譲(他のtc-*アプリと同一ユーザーとして扱う、did-delegation.md) ---
+  didSectionHeading: "他のtc-*アプリと同一ユーザーとして扱う",
+  didSectionHint: "mistlで「mistl key pair」を実行して表示されたコードを入力してください。",
+  didStatusNoneDetail: "委譲なし。このデバイス固有のID: {did}",
+  didStatusActiveDetail: "委譲あり。共通ID: {did}(有効期限: {expiry})",
+  didPairingCodeLabel: "ペアリングコード",
+  didPairingCodePlaceholder: "XXXX-XXXX-XXXX-XXXX",
+  didPairingButton: "ペアリングする",
+  didPairingPending: "ペアリング中...",
+  didPairingUnknownError: "ペアリングに失敗しました。",
+
   // ----- AI接続タブ(providers/presets、tc-shared-llm-config-v1) -----------
   connectionHint:
     "記事生成・翻訳・番組読み上げに使う接続先とモデルです。同一オリジンの他のtik-chocoアプリとも共有されます。",
@@ -155,6 +166,16 @@ const en: typeof ja = {
   showMediaPreviews: "Show thumbnails and link previews",
   showMediaPreviewsHint:
     "Automatically fetches OGP data (images and videos) from feed and source-link pages. May use the CORS proxy.",
+
+  didSectionHeading: "Treat other tc-* apps as the same user",
+  didSectionHint: "Run \"mistl key pair\" in mistl and enter the code it shows.",
+  didStatusNoneDetail: "No delegation. This device's ID: {did}",
+  didStatusActiveDetail: "Delegated. Shared ID: {did} (expires {expiry})",
+  didPairingCodeLabel: "Pairing code",
+  didPairingCodePlaceholder: "XXXX-XXXX-XXXX-XXXX",
+  didPairingButton: "Pair",
+  didPairingPending: "Pairing...",
+  didPairingUnknownError: "Pairing failed.",
 
   connectionHint:
     "The connections and models used for article generation, translation, and program narration. Shared with other tik-choco apps on the same origin.",

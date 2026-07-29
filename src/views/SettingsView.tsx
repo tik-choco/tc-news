@@ -47,6 +47,7 @@ import type { JSX } from "preact";
 import {
   AlertTriangle,
   Cpu,
+  Fingerprint,
   Network,
   Plug,
   Plus,
@@ -57,9 +58,12 @@ import {
   Sparkles,
   X,
 } from "lucide-preact";
-import { MESSAGES_EN, MESSAGES_JA } from "@tik-choco/mistai";
+import { MESSAGES_EN, MESSAGES_JA, formatMistaiError } from "@tik-choco/mistai";
 import { ProviderStatusPanel } from "@tik-choco/mistai/preact";
 import "@tik-choco/mistai/ui.css";
+import { loadDelegationFor, subscribeDelegation, type DelegationV1 } from "@tik-choco/mistai/identity";
+import { ensureDidIdentity } from "../crypto/didIdentity";
+import { pairDidDelegation } from "../lib/didPairing";
 import type { AppSettings } from "../types";
 import {
   emptyLlmConfig,
@@ -288,6 +292,59 @@ export function SettingsView(props: {
   const { settings, onSettingsChange, networkProvider } = props;
   const t = useT();
   const { locale, setLocale } = useLocale();
+
+  // ----- DID委譲(他のtc-*アプリと同一ユーザーとして扱う、did-delegation.md) ---
+  // leafDid: このオリジンのデバイス固有DID(crypto/didIdentity.ts)。委譲の
+  // 有無に関わらず常に存在する。delegation: leafDidに対して有効な委譲があれば
+  // そのレコード(root/exp込み)、無ければundefined。tc-shared-did-delegation-v1
+  // は他のtc-*アプリやペアリング成立時に書き換わり得るので、storageイベント
+  // (subscribeDelegation)を購読して再検証する。
+  const [leafDid, setLeafDid] = useState("");
+  useEffect(() => {
+    let cancelled = false;
+    ensureDidIdentity().then((identity) => {
+      if (!cancelled) setLeafDid(identity.did);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const [delegation, setDelegation] = useState<DelegationV1 | undefined>(undefined);
+  useEffect(() => {
+    if (!leafDid) return undefined;
+    let cancelled = false;
+    function refresh() {
+      loadDelegationFor(leafDid).then((d) => {
+        if (!cancelled) setDelegation(d);
+      });
+    }
+    refresh();
+    const unsubscribe = subscribeDelegation(refresh);
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [leafDid]);
+
+  const [pairingCode, setPairingCode] = useState("");
+  const [pairingBusy, setPairingBusy] = useState(false);
+  const [pairingError, setPairingError] = useState("");
+
+  async function handlePairDidDelegation() {
+    if (!leafDid || pairingBusy || !pairingCode.trim()) return;
+    setPairingBusy(true);
+    setPairingError("");
+    try {
+      const result = await pairDidDelegation(pairingCode, leafDid);
+      setDelegation(result);
+      setPairingCode("");
+    } catch (err) {
+      setPairingError(formatMistaiError(err, locale === "ja" ? MESSAGES_JA : MESSAGES_EN, t("settings.didPairingUnknownError")));
+    } finally {
+      setPairingBusy(false);
+    }
+  }
 
   // Pure UI state — must not gate any hook below (see header comment).
   const [tab, setTabState] = useState<SettingsTab>(() => loadSettingsTab());
@@ -1161,6 +1218,42 @@ export function SettingsView(props: {
                 <span class="field-hint">{t("settings.showMediaPreviewsHint")}</span>
               </span>
             </label>
+
+            <h2 class="settings-heading">
+              <Fingerprint size={16} /> {t("settings.didSectionHeading")}
+            </h2>
+            <p class="field-hint">{t("settings.didSectionHint")}</p>
+            <p class="field-hint">
+              {delegation
+                ? t("settings.didStatusActiveDetail", {
+                    did: delegation.root,
+                    expiry: new Date(delegation.exp).toLocaleString(locale),
+                  })
+                : t("settings.didStatusNoneDetail", { did: leafDid || "…" })}
+            </p>
+            <label class="field">
+              <span>{t("settings.didPairingCodeLabel")}</span>
+              <input
+                value={pairingCode}
+                onInput={(e) => setPairingCode(e.currentTarget.value)}
+                placeholder={t("settings.didPairingCodePlaceholder")}
+                disabled={pairingBusy}
+                autoComplete="off"
+              />
+            </label>
+            <button
+              type="button"
+              class="btn"
+              onClick={() => void handlePairDidDelegation()}
+              disabled={pairingBusy || !pairingCode.trim() || !leafDid}
+            >
+              <Fingerprint size={15} /> {pairingBusy ? t("settings.didPairingPending") : t("settings.didPairingButton")}
+            </button>
+            {pairingError ? (
+              <p class="settings-alert" role="alert">
+                <AlertTriangle size={14} /> {pairingError}
+              </p>
+            ) : null}
 
             <h2 class="settings-heading">
               <Sparkles size={16} /> {t("onboarding.reopenTitle")}
