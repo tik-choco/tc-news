@@ -18,7 +18,9 @@ export async function requestChatCompletion(
   try {
     let full = "";
     const content = providerKind(target) === "room"
-      ? await rooms.requestRoomChat(roomIdFromBaseUrl(target.baseUrl), messages, target.model, options?.onDelta)
+      ? await rooms.requestRoomChat(roomIdFromBaseUrl(target.baseUrl), messages, {
+          model: target.model, reasoningEffort: task.reasoningEffort, onDelta: options?.onDelta,
+        })
       : await streamChatCompletion({ ...target, reasoningEffort: task.reasoningEffort }, messages, options?.onDelta ? delta => {
           full += delta;
           options.onDelta!(delta, full);
