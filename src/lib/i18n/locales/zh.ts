@@ -1,7 +1,9 @@
 import type { Messages } from "../messages";
+import { recommendation } from "../catalog/recommendation";
 
 // 简体中文
 export const zh: Messages = {
+  recommendation: recommendation.zh,
   common: {
     cancel: "取消",
     save: "保存",
@@ -62,15 +64,17 @@ export const zh: Messages = {
     addToSelection: "选为生成对象",
     removeFromSelection: "取消选择",
     homeArticlesHeading: "你的文章",
-    homeArticlesEmpty: "还没有文章。可以从下方的新条目中选择生成，或者试试「生成今日简报」。",
+    manageFeeds: "添加和管理订阅源",
+    homeStartReading: "无需设置即可阅读共享文章。打开你感兴趣的文章看看吧。",
+    homeArticlesEmpty: "添加自己的新闻来源后，即可阅读最新消息，或用 AI 将其整理成文章。",
     briefingGenerate: "生成今日简报",
     briefingGenerateHint: "AI编辑部会将最新条目整理成多篇文章",
     // Home tab: "everyone's news" section (articles received from the global
     // room). Named after the shared tab ("大家") so users connect the two.
     globalHeading: "大家的新闻",
     globalSeeAll: "查看全部",
-    globalConnecting: "正在接收大家的新闻...",
-    globalEmpty: "还没有大家的文章。有人分享后会显示在这里。",
+    globalConnecting: "正在等待连接共享新闻。你也可以添加自己的订阅源，开始阅读。",
+    globalEmpty: "尚未收到共享文章。添加自己的订阅源即可开始阅读。",
     // Home tab: article grids show a few cards, with a toggle for the rest
     homeShowAll: "显示全部 ({count})",
     homeShowLess: "收起",
@@ -110,16 +114,19 @@ export const zh: Messages = {
     selectTitle: "请选择一篇文章",
     selectDescription: "从左侧列表中选择一篇文章，全文会显示在这里。",
     sourcesTitle: "来源",
+    sourcesJump: "查看来源（{count}个）",
     justNow: "刚刚",
     openInChatLink: "在 tc-chat 中查看",
     sentToChat: "已发送到 tc-chat",
-    evaluate: "评价文章",
+    evaluate: "用 AI 评价文章写作",
     evaluating: "评价中...",
-    evalOverall: "综合评分",
+    evalOverall: "AI 写作参考评分",
+    evalScoreLabel: "AI 写作参考 {score}/100",
+    evalScope: "这是 AI 对文章写作的参考评价，未与来源全文进行比对，也未核实事实。",
     evalNotes: "总评",
     evalSuggestions: "改进建议",
     evalCategoryApplied: "已将分类设为「{category}」",
-    axis_accuracy_score: "事实准确性",
+    axis_accuracy_score: "依据的呈现方式",
     axis_clarity_score: "可读性",
     axis_coverage_score: "信息量",
     axis_headline_score: "标题质量",
@@ -186,6 +193,8 @@ export const zh: Messages = {
   },
 
   settings: {
+    developerMode: "开发者模式",
+    developerModeHint: "显示文章推荐原因，不会更改正在使用的 mistlib 版本。",
     tabLabel: "设置",
     title: "设置",
     tabsAriaLabel: "设置标签页",
@@ -347,15 +356,16 @@ export const zh: Messages = {
     close: "关闭",
     back: "上一步",
     next: "下一步",
-    start: "开始",
+    start: "阅读新闻",
+    setupCreation: "设置文章创作",
     saveAndNext: "保存并继续",
     finish: "完成",
 
     welcomeTitle: "欢迎使用 TC News!",
     welcomeBody1:
-      "TC News 是一款新闻应用，AI 会根据 RSS 订阅源撰写文章，并通过 P2P 房间与大家分享。",
+      "阅读大家分享的新闻，或利用 AI 根据 RSS 订阅源创作自己的文章。",
     welcomeBody2:
-      "先来准备两件事：LLM 连接设置，以及分享时使用的昵称。这两项之后都可以随时在设置页面修改。",
+      "仅阅读无需设置 LLM 连接或 API 密钥。先看看新闻吧，想创作文章时，可以随时在设置中进行配置。",
 
     llmTitle: "LLM 连接设置",
     llmIntro:
@@ -388,9 +398,9 @@ export const zh: Messages = {
     tourSharedDesc: "通过 P2P 房间和全局分发，实时阅读大家的文章",
     tourSettingsTitle: "设置",
     tourSettingsDesc: "可以修改 LLM 设置、AI Network、语言和主题",
-    tourShareTitle: "自动分享",
+    tourShareTitle: "文章分享",
     tourShareDesc:
-      "默认情况下，生成的文章会自动分享到房间。如果想改为手动，可以随时在设置的「文章共享模式」中更改。",
+      "可以在设置中选择发布到哪里，以及手动或自动分享。发布前，请确认文章内容和分享设置。",
     tourOutro: "所有设置都会自动保存。祝你使用愉快!",
   },
 

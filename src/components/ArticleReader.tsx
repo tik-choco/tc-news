@@ -1,7 +1,7 @@
 // Full article reader: renders the Markdown body as sanitized HTML inside a
 // 720px-max reading column, with title/author/date/tags up top and the
 // source-link list at the bottom. Used by ArticlesView and SharedView.
-import { useMemo, useState } from "preact/hooks";
+import { useMemo, useRef, useState } from "preact/hooks";
 import type { JSX } from "preact";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
@@ -27,6 +27,7 @@ function formatDateTime(ms: number): string {
 export function ArticleReader(props: { article: NewsArticle }): JSX.Element {
   const { article } = props;
   const t = useT();
+  const sourcesHeadingRef = useRef<HTMLHeadingElement>(null);
   const html = useMemo(() => renderMarkdown(article.body), [article.body]);
   const category = article.category ? coerceCategory(article.category) : null;
   // Hero image is opt-in per settings and hides itself silently on load
@@ -60,6 +61,20 @@ export function ArticleReader(props: { article: NewsArticle }): JSX.Element {
             ))}
           </div>
         ) : null}
+        {article.sourceLinks.length > 0 ? (
+          <button
+            type="button"
+            class="link-btn article-reader-sources-jump"
+            onClick={() => {
+              // Keep the article's hash route intact and move keyboard focus
+              // with the viewport so the next Tab reaches the source links.
+              sourcesHeadingRef.current?.scrollIntoView({ block: "start" });
+              sourcesHeadingRef.current?.focus({ preventScroll: true });
+            }}
+          >
+            {t("articles.sourcesJump", { count: article.sourceLinks.length })}
+          </button>
+        ) : null}
       </header>
 
       {showHero ? (
@@ -78,7 +93,9 @@ export function ArticleReader(props: { article: NewsArticle }): JSX.Element {
 
       {article.sourceLinks.length > 0 ? (
         <footer class="article-reader-sources">
-          <h2 class="article-reader-sources-title">{t("articles.sourcesTitle")}</h2>
+          <h2 ref={sourcesHeadingRef} tabIndex={-1} class="article-reader-sources-title">
+            {t("articles.sourcesTitle")}
+          </h2>
           <ul class="article-reader-sources-list">
             {article.sourceLinks.map((link) => (
               <li key={link.url}>

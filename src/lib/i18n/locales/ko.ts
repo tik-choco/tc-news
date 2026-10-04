@@ -1,7 +1,9 @@
 import type { Messages } from "../messages";
+import { recommendation } from "../catalog/recommendation";
 
 // 한국어
 export const ko: Messages = {
+  recommendation: recommendation.ko,
   common: {
     cancel: "취소",
     save: "저장",
@@ -62,16 +64,18 @@ export const ko: Messages = {
     addToSelection: "생성 대상으로 선택",
     removeFromSelection: "선택 해제",
     homeArticlesHeading: "내 기사",
+    manageFeeds: "피드 등록·관리",
+    homeStartReading: "공유된 기사는 설정 없이 읽을 수 있습니다. 관심 있는 기사를 열어 보세요.",
     homeArticlesEmpty:
-      "아직 기사가 없습니다. 아래 새 항목을 선택해 생성하거나 「오늘의 브리핑 생성」을 시도해 보세요.",
+      "원하는 뉴스 출처를 등록하면 새 소식을 읽거나 AI로 기사를 정리할 수 있습니다.",
     briefingGenerate: "오늘의 브리핑 생성",
     briefingGenerateHint: "AI 편집부가 최신 항목을 여러 기사로 정리합니다",
     // Home tab: "everyone's news" section (articles received from the global
     // room). Named after the shared tab ("모두") so users connect the two.
     globalHeading: "모두의 뉴스",
     globalSeeAll: "모두 보기",
-    globalConnecting: "모두의 뉴스를 수신하는 중...",
-    globalEmpty: "아직 모두의 기사가 도착하지 않았습니다. 누군가 공유하면 여기에 표시됩니다.",
+    globalConnecting: "공유 뉴스 연결을 기다리고 있습니다. 원하는 피드를 등록해 읽기 시작할 수도 있습니다.",
+    globalEmpty: "아직 공유된 기사가 도착하지 않았습니다. 원하는 피드를 등록해 읽기 시작해 보세요.",
     // Home tab: article grids show a few cards, with a toggle for the rest
     homeShowAll: "전체 보기 ({count})",
     homeShowLess: "줄여서 보기",
@@ -111,16 +115,19 @@ export const ko: Messages = {
     selectTitle: "기사를 선택하세요",
     selectDescription: "왼쪽 목록에서 기사를 선택하면 여기에 전문이 표시됩니다.",
     sourcesTitle: "출처",
+    sourcesJump: "출처 보기 ({count}개)",
     justNow: "방금 전",
     openInChatLink: "tc-chat에서 보기",
     sentToChat: "tc-chat로 전송했습니다",
-    evaluate: "기사 평가",
+    evaluate: "AI로 글 평가",
     evaluating: "평가 중...",
-    evalOverall: "종합 점수",
+    evalOverall: "AI 글쓰기 참고 점수",
+    evalScoreLabel: "AI 글쓰기 참고 {score}/100",
+    evalScope: "AI가 글에 제공하는 참고 평가입니다. 출처 원문과 대조하거나 사실을 확인하지 않았습니다.",
     evalNotes: "총평",
     evalSuggestions: "개선 제안",
     evalCategoryApplied: "카테고리를 「{category}」(으)로 설정했습니다",
-    axis_accuracy_score: "사실 충실도",
+    axis_accuracy_score: "근거 제시 방식",
     axis_clarity_score: "가독성",
     axis_coverage_score: "정보량",
     axis_headline_score: "헤드라인 품질",
@@ -187,6 +194,8 @@ export const ko: Messages = {
   },
 
   settings: {
+    developerMode: "개발자 모드",
+    developerModeHint: "기사 추천 이유를 표시합니다. 사용 중인 mistlib 버전은 바뀌지 않습니다.",
     tabLabel: "설정",
     title: "설정",
     tabsAriaLabel: "설정 탭",
@@ -349,15 +358,16 @@ export const ko: Messages = {
     close: "닫기",
     back: "이전",
     next: "다음",
-    start: "시작하기",
+    start: "뉴스 읽기",
+    setupCreation: "기사 작성 설정",
     saveAndNext: "저장하고 계속",
     finish: "완료",
 
     welcomeTitle: "TC News에 오신 것을 환영합니다!",
     welcomeBody1:
-      "TC News는 RSS 피드의 뉴스를 바탕으로 AI가 기사를 작성하고, P2P 룸을 통해 모두와 공유하는 뉴스 앱입니다.",
+      "다른 사람들이 공유한 뉴스를 읽거나 RSS 피드를 바탕으로 AI로 기사를 작성할 수 있습니다.",
     welcomeBody2:
-      "먼저 두 가지만 준비해요: LLM 연결 설정과 공유할 때 사용할 닉네임입니다. 둘 다 나중에 설정 화면에서 언제든 변경할 수 있습니다.",
+      "읽기만 한다면 LLM 연결 설정이나 API 키가 필요 없습니다. 먼저 뉴스를 읽어 보세요. 기사를 작성하고 싶을 때 설정 화면에서 언제든 준비할 수 있습니다.",
 
     llmTitle: "LLM 연결 설정",
     llmIntro:
@@ -390,9 +400,9 @@ export const ko: Messages = {
     tourSharedDesc: "P2P 룸과 글로벌 배포를 통해 모두의 기사를 실시간으로 읽을 수 있습니다",
     tourSettingsTitle: "설정",
     tourSettingsDesc: "LLM 설정, AI Network, 언어와 테마를 변경할 수 있습니다",
-    tourShareTitle: "자동 공유",
+    tourShareTitle: "기사 공유",
     tourShareDesc:
-      "기본적으로 생성한 기사는 자동으로 룸에 공유됩니다. 수동으로 바꾸고 싶다면 설정의 「기사 공유 모드」에서 언제든 변경할 수 있습니다.",
+      "설정 화면에서 게시할 곳과 수동·자동 공유 방식을 선택할 수 있습니다. 게시하기 전에 기사 내용과 공유 설정을 확인하세요.",
     tourOutro: "모든 설정은 자동으로 저장됩니다. 즐겁게 사용해 주세요!",
   },
 

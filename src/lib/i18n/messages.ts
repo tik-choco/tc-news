@@ -8,6 +8,7 @@ import { translate } from "./catalog/translate";
 import { onboarding } from "./catalog/onboarding";
 import { program } from "./catalog/program";
 import { player } from "./catalog/player";
+import { recommendation } from "./catalog/recommendation";
 
 /**
  * The full message tree, assembled from the per-domain catalogs. `ja` is the
@@ -16,6 +17,7 @@ import { player } from "./catalog/player";
  * so a forgotten key is a compile error rather than a silent blank.
  */
 export const ja = {
+  recommendation: recommendation.ja,
   common: common.ja,
   feed: feed.ja,
   articles: articles.ja,
@@ -29,6 +31,7 @@ export const ja = {
 };
 
 export const en: Messages = {
+  recommendation: recommendation.en,
   common: common.en,
   feed: feed.en,
   articles: articles.en,

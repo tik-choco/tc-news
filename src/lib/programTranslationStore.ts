@@ -18,7 +18,7 @@
 // OPFS-backed; localStorage only as a pre-hydration/fallback path — see
 // kvStore.ts's module header).
 
-import { KV_VALUE_SOFT_LIMIT_BYTES, kvGetSync, kvSetSync, utf8ByteLength } from "./kvStore";
+import { loadKvRecords, persistKvRecords } from "./kvRecordStore";
 
 const PROGRAM_TRANSLATIONS_KEY = "tc-news:program-translations";
 const MAX_PROGRAM_TRANSLATIONS = 20;
@@ -91,36 +91,11 @@ function coerceProgramTranslation(value: unknown): ProgramTranslation | null {
 }
 
 function loadAll(): Record<string, ProgramTranslation> {
-  try {
-    const raw = kvGetSync(PROGRAM_TRANSLATIONS_KEY);
-    if (!raw) return {};
-    const parsed: unknown = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-    const out: Record<string, ProgramTranslation> = {};
-    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
-      const record = coerceProgramTranslation(v);
-      if (record) out[k] = record;
-    }
-    return out;
-  } catch {
-    return {};
-  }
+  return loadKvRecords(PROGRAM_TRANSLATIONS_KEY, coerceProgramTranslation);
 }
 
 function persistAll(all: Record<string, ProgramTranslation>): void {
-  // Same byte-level safety net as partialFeedTranslationStore.ts's
-  // persistAll: the mist KV rejects any single value over ~1MiB, and
-  // MAX_PROGRAM_TRANSLATIONS alone doesn't bound byte size (a long program
-  // with many segments can already carry a fair amount of translated text
-  // per entry). Trim oldest-first (by translatedAt) until the serialized
-  // blob is back under the soft limit.
-  let entries = Object.entries(all);
-  let serialized = JSON.stringify(Object.fromEntries(entries));
-  while (entries.length > 0 && utf8ByteLength(serialized) > KV_VALUE_SOFT_LIMIT_BYTES) {
-    entries = entries.sort((a, b) => b[1].translatedAt - a[1].translatedAt).slice(0, -1);
-    serialized = JSON.stringify(Object.fromEntries(entries));
-  }
-  kvSetSync(PROGRAM_TRANSLATIONS_KEY, serialized);
+  persistKvRecords(PROGRAM_TRANSLATIONS_KEY, all, (record) => record.translatedAt);
 }
 
 /** 番組×言語の翻訳(あれば)。無ければnull — 呼び出し側はLLM翻訳を実行する合図として使う。 */

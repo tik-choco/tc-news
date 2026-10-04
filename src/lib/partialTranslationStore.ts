@@ -13,7 +13,7 @@
 // matches and translate.ts discards the stale partial rather than resuming
 // into a translation of content that no longer exists.
 
-import { KV_VALUE_SOFT_LIMIT_BYTES, kvGetSync, kvSetSync, utf8ByteLength } from "./kvStore";
+import { loadKvRecords, persistKvRecords } from "./kvRecordStore";
 
 // Small cap, unlike translationStore's 50: an entry here only exists
 // transiently, between "translation started" and "translation finished or
@@ -69,34 +69,11 @@ function coercePartialArticleTranslation(value: unknown): PartialArticleTranslat
 }
 
 function loadAll(): Record<string, PartialArticleTranslation> {
-  try {
-    const raw = kvGetSync(PARTIAL_TRANSLATIONS_KEY);
-    if (!raw) return {};
-    const parsed: unknown = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-    const out: Record<string, PartialArticleTranslation> = {};
-    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
-      const record = coercePartialArticleTranslation(v);
-      if (record) out[k] = record;
-    }
-    return out;
-  } catch {
-    return {};
-  }
+  return loadKvRecords(PARTIAL_TRANSLATIONS_KEY, coercePartialArticleTranslation);
 }
 
 function persistAll(all: Record<string, PartialArticleTranslation>): void {
-  // Same byte-level safety net as translationStore.persistAll: trim
-  // oldest-first (by updatedAt) until the serialized blob is back under the
-  // mist KV's soft limit, so this store can never itself produce a write
-  // that the KV rejects outright.
-  let entries = Object.entries(all);
-  let serialized = JSON.stringify(Object.fromEntries(entries));
-  while (entries.length > 0 && utf8ByteLength(serialized) > KV_VALUE_SOFT_LIMIT_BYTES) {
-    entries = entries.sort((a, b) => b[1].updatedAt - a[1].updatedAt).slice(0, -1);
-    serialized = JSON.stringify(Object.fromEntries(entries));
-  }
-  kvSetSync(PARTIAL_TRANSLATIONS_KEY, serialized);
+  persistKvRecords(PARTIAL_TRANSLATIONS_KEY, all, (record) => record.updatedAt);
 }
 
 /** The in-progress translation for articleId×lang, if any. Callers must

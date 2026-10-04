@@ -66,7 +66,7 @@ export async function classifyFeedItems(
   ];
 
   try {
-    const responseText = await requestChatCompletion(profileId, messages, { temperature: 0.1 });
+    const responseText = await requestChatCompletion(profileId, messages);
     const data = JSON.parse(extractJson(responseText)) as Record<string, unknown>;
     for (const [id, rawCategory] of Object.entries(data)) {
       if (!validIds.has(id)) continue;

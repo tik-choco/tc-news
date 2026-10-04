@@ -6,8 +6,8 @@
 // module header) to avoid re-fetching the same URL across sessions, and
 // rate-limited so a feed view with dozens of links doesn't fire dozens of
 // simultaneous requests.
-import type { AppSettings } from "../types";
 import { loadAppSettings } from "./appSettings";
+import { fetchExternalHtml } from "./externalHtml";
 import { kvGetSync, kvSetSync } from "./kvStore";
 
 export interface LinkPreview {
@@ -233,37 +233,9 @@ function acquireSlot(): Promise<() => void> {
   });
 }
 
-async function fetchWithTimeout(url: string): Promise<string> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-  try {
-    const res = await fetch(url, { signal: controller.signal });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.text();
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-async function fetchHtml(url: string, settings: AppSettings): Promise<string | null> {
-  try {
-    return await fetchWithTimeout(url);
-  } catch {
-    // fall through to proxy below
-  }
-  if (settings.corsProxy) {
-    try {
-      return await fetchWithTimeout(settings.corsProxy + encodeURIComponent(url));
-    } catch {
-      // fall through to null below
-    }
-  }
-  return null;
-}
-
 async function fetchAndParse(url: string): Promise<LinkPreview | null> {
   const settings = loadAppSettings();
-  const html = await fetchHtml(url, settings);
+  const html = await fetchExternalHtml(url, settings.corsProxy, FETCH_TIMEOUT_MS);
   if (html === null) return null;
   try {
     return parseLinkPreviewHtml(html, url);
@@ -275,7 +247,7 @@ async function fetchAndParse(url: string): Promise<LinkPreview | null> {
 // Dedupe concurrent requests for the same URL.
 const inFlight = new Map<string, Promise<LinkPreview | null>>();
 
-/** Fetch (direct, then via corsProxy from loadAppSettings()), parse OGP, and
+/** Fetch (local dev relay or direct/configured CORS proxy), parse OGP, and
  * cache. Never rejects — resolves null on failure (and negative-caches it).
  * Concurrent calls for the same URL share one in-flight request. */
 export function fetchLinkPreview(url: string): Promise<LinkPreview | null> {

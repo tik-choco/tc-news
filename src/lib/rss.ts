@@ -3,6 +3,7 @@
 // dependency list (and bundle size) small.
 import type { FeedItem, FeedSource } from "../types";
 import { tGlobal } from "./i18n";
+import { fetchLocalRelayText } from "./externalHtml";
 
 const MAX_SUMMARY_LENGTH = 500;
 
@@ -345,7 +346,8 @@ async function tryFetchText(url: string): Promise<string> {
   return res.text();
 }
 
-/** Fetches `url` directly; on any failure (network error or non-2xx),
+/** Prefer the verified workspace relay. Otherwise fetch `url` directly;
+ * on any failure (network error or non-2xx),
  * retries once through `corsProxy` (if configured) before giving up. Shared
  * by fetchFeedItems and fetchFeedTitle so both get the same direct→proxy
  * fallback behavior. */
@@ -353,6 +355,10 @@ async function fetchXmlWithProxyFallback(
   url: string,
   corsProxy: string,
 ): Promise<{ xml: string | null; directFailedAsNetworkError: boolean; lastError: unknown }> {
+  const relayed = await fetchLocalRelayText(url);
+  if (relayed !== null) {
+    return { xml: relayed, directFailedAsNetworkError: false, lastError: null };
+  }
   let xml: string | null = null;
   let lastError: unknown = null;
   // TypeError is what fetch() throws for network-layer failures (a CORS
@@ -378,7 +384,8 @@ async function fetchXmlWithProxyFallback(
   return { xml, directFailedAsNetworkError, lastError };
 }
 
-/** Fetches a feed directly; on any failure (network error or non-2xx),
+/** Fetches via the workspace relay when available, otherwise directly;
+ * on any failure (network error or non-2xx),
  * retries once through the configured CORS proxy before giving up. */
 export async function fetchFeedItems(source: FeedSource, corsProxy: string): Promise<FeedItem[]> {
   const { xml, directFailedAsNetworkError, lastError } = await fetchXmlWithProxyFallback(source.url, corsProxy);

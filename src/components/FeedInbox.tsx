@@ -2,7 +2,7 @@
 // メインコンテンツとして表示していたRSS新着グリッド(カテゴリフィルタ込み)
 // を、記事優先レイアウトへの移行に伴いここへ独立させた。開閉状態は
 // localStorageに永続化し、次回訪問時も同じ表示状態を保つ。
-import { useCallback, useMemo, useRef, useState } from "preact/hooks";
+import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { memo } from "preact/compat";
 import type { JSX } from "preact";
 import { ChevronDown, ChevronUp, Inbox, Rss } from "lucide-preact";
@@ -15,6 +15,10 @@ import { ARTICLE_CATEGORIES, categoryLabelKey, coerceCategory, type ArticleCateg
 import { useLocale, useT, type Locale } from "../lib/i18n";
 import { groupNearDuplicateItems } from "../lib/feedDedupe";
 import { safeSetItem } from "../lib/safeStorage";
+import type { InterestState } from "../lib/recommendationTypes";
+import { feedCandidate } from "../lib/recommendationCandidates";
+import { useRankedCandidates } from "../hooks/useRecommendations";
+import { RecommendationItem } from "./RecommendationItem";
 import "../styles/feedInbox.css";
 
 const COLLAPSE_STORAGE_KEY = "tc-news:feed-inbox-collapsed";
@@ -25,7 +29,7 @@ const LONG_PRESS_MOVE_PX = 10;
 
 // 新着アイテムグリッドは最大MAX_FEED_ITEMS(feedStore.ts)件まで溜まりうる
 // ため、一度に全件は描画しない。カードが記事グリッドより小ぶりなぶん初期
-// 件数は多めにしつつ、「さらに表示」で段階的に伸ばす(500件一括の
+// 件数は多めにしつつ、スクロールで段階的に伸ばす(500件一括の
 // 「すべて表示」だと逆にUXが悪い)。
 const DEFAULT_VISIBLE_COUNT = 30;
 const LOAD_MORE_STEP = 30;
@@ -255,6 +259,8 @@ export function FeedInbox(props: {
   /** 複数idの選択状態を一括で設定(すべて選択/シフト範囲選択用)。 */
   onSelectMany: (ids: string[], selected: boolean) => void;
   onOpenItem: (item: FeedItem) => void;
+  recommendationState?: InterestState;
+  trackImpressions?: boolean;
 }): JSX.Element {
   const { items, selectedIds, onToggleSelect, onSelectMany, onOpenItem } = props;
   const t = useT();
@@ -266,7 +272,7 @@ export function FeedInbox(props: {
   const [selectionMode, setSelectionMode] = useState(false);
 
   // 新着グリッドの初期描画件数。最大MAX_FEED_ITEMS(500)件を一度に描画
-  // しないためのキャップで、「さらに表示」で段階的に伸びる。カテゴリ
+  // しないためのキャップで、スクロールで段階的に伸びる。カテゴリ
   // フィルタ切り替えなど、表示対象の集合が丸ごと変わる操作では
   // resetVisibleCount()で初期値に戻す。
   const [visibleCount, setVisibleCount] = useState(DEFAULT_VISIBLE_COUNT);
@@ -278,7 +284,13 @@ export function FeedInbox(props: {
 
   // ほぼ同一ニュース(複数ソースからの同一トピック)を1カードにまとめる。
   // itemsはnewest-first前提で、各クラスタの先頭が代表として表示される。
-  const groups = useMemo(() => groupNearDuplicateItems(items), [items]);
+  const rawGroups = useMemo(() => groupNearDuplicateItems([...items].sort((a, b) => b.publishedAt - a.publishedAt)), [items]);
+  const candidates = useMemo(() => rawGroups.map(({ item }) => feedCandidate(item)), [rawGroups]);
+  const ranked = useRankedCandidates(candidates, props.recommendationState);
+  const groupById = useMemo(() => new Map(rawGroups.map((group) => [group.item.id, group])), [rawGroups]);
+  const groups = props.recommendationState ? ranked.map((r) => groupById.get(r.candidate.id)!) : rawGroups;
+  const rankedById = new Map(ranked.map((r) => [r.candidate.id, r]));
+  const impressionSession = useMemo(() => crypto.randomUUID(), [props.recommendationState]);
 
   // Categories actually present among the current group representatives,
   // in taxonomy order — the filter bar only ever offers chips a user could
@@ -303,6 +315,26 @@ export function FeedInbox(props: {
   // が選ばれないと直感に反するため。
   const shownGroups = visibleGroups.slice(0, visibleCount);
   const remainingCount = visibleGroups.length - shownGroups.length;
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const sentinel = loadMoreRef.current;
+    if (collapsed || remainingCount <= 0 || !sentinel) return;
+
+    let active = true;
+    const observer = new IntersectionObserver((entries) => {
+      if (!active || !entries.some((entry) => entry.isIntersecting)) return;
+      // One batch per observation; observe again after the new cards render.
+      active = false;
+      observer.disconnect();
+      setVisibleCount((count) => count + LOAD_MORE_STEP);
+    }, { rootMargin: "0px 0px 400px 0px" });
+    observer.observe(sentinel);
+    return () => {
+      active = false;
+      observer.disconnect();
+    };
+  }, [collapsed, filterCat, visibleCount, remainingCount]);
 
   // 選択UI(チェックボックス等)の表示条件: 選択モード中、またはモーダル
   // 側の「選択に追加」等で既に何か選ばれている場合。
@@ -402,7 +434,7 @@ export function FeedInbox(props: {
       </div>
 
       {collapsed ? null : groups.length === 0 ? (
-        <EmptyState icon={Rss} title={t("feed.emptyTitle")} description={t("feed.emptyDescription")} />
+        <EmptyState icon={Rss} title={t("feed.emptyTitle")} description={t(rawGroups.length > 0 ? "recommendation.empty" : "feed.emptyDescription")} />
       ) : (
         <div class="feed-inbox-body">
           {presentCategories.length > 0 ? (
@@ -435,8 +467,8 @@ export function FeedInbox(props: {
             </div>
           ) : null}
           <div class={`feed-items-grid${selectionActive ? " feed-items-grid--selecting" : ""}`}>
-            {shownGroups.map((group, index) => (
-              <FeedItemCard
+            {shownGroups.map((group, index) => {
+              const card = <FeedItemCard
                 key={group.item.id}
                 item={group.item}
                 duplicates={group.duplicates}
@@ -450,19 +482,18 @@ export function FeedInbox(props: {
                 locale={locale}
                 untitledLabel={t("feed.untitledItem")}
                 selectAriaLabel={t("feed.addToSelection")}
-              />
-            ))}
+              />;
+              return props.recommendationState ? (
+                <RecommendationItem key={group.item.id} entry={rankedById.get(group.item.id)!} position={index}
+                  sessionId={impressionSession} enabled={props.recommendationState.enabled && props.trackImpressions !== false && !selectionActive}
+                  personalized={props.recommendationState.enabled && props.recommendationState.mode === "recommended"}>
+                  {card}
+                </RecommendationItem>
+              ) : card;
+            })}
           </div>
           {remainingCount > 0 ? (
-            <div class="feed-inbox-load-more">
-              <button
-                type="button"
-                class="btn btn-ghost btn-small"
-                onClick={() => setVisibleCount((prev) => prev + LOAD_MORE_STEP)}
-              >
-                {t("feed.inboxLoadMore", { count: Math.min(LOAD_MORE_STEP, remainingCount) })}
-              </button>
-            </div>
+            <div ref={loadMoreRef} class="feed-inbox-load-more" aria-hidden="true" />
           ) : null}
         </div>
       )}

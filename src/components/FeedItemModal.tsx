@@ -9,7 +9,7 @@
 // being closed, since the queue (not local state) owns its lifecycle — and
 // a footer that mirrors the card's selection affordance so the generate
 // flow works the same way from either place.
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useMemo, useState } from "preact/hooks";
 import type { JSX } from "preact";
 import { Check, ExternalLink, Languages, Loader2, Sparkles, X } from "lucide-preact";
 import type { FeedItem } from "../types";
@@ -27,6 +27,9 @@ import { useJobQueue } from "../hooks/useJobQueue";
 import { useTranslationProgress } from "../hooks/useTranslationProgress";
 import { clearTranslationProgress, publishTranslationProgress } from "../lib/translationProgress";
 import { LanguagePicker } from "./LanguagePicker";
+import { RecommendationFeedback } from "./RecommendationFeedback";
+import { feedCandidate } from "../lib/recommendationCandidates";
+import { useReadingInterest, type ReadingContentState } from "../hooks/useReadingInterest";
 import "../styles/components.css";
 import "../styles/feedModal.css";
 
@@ -196,6 +199,20 @@ export function FeedItemModal(props: {
   // All close paths (overlay click, X button, Escape) funnel through here so
   // the exit animation always plays before the item actually unmounts.
   const [closing, setClosing] = useState(false);
+  const recommendationCandidate = useMemo(() => feedCandidate(item), [item]);
+  // Mirror the displayed body branches below: extraction failure is only a
+  // short summary signal; streaming/loading time never becomes a full read.
+  const readingContent: ReadingContentState = closing
+    ? "error"
+    : liveProgress && !cachedTranslation
+      ? "loading"
+      : showTranslated && cachedTranslation
+        ? cachedTranslation.html ? "full" : cachedTranslation.summary ? "summary" : "error"
+        : page === undefined
+          ? "loading"
+          : page ? "full" : item.summary || preview?.description ? "summary" : "error";
+  useReadingInterest(recommendationCandidate, readingContent);
+
   function requestClose() {
     if (closing) return;
     setClosing(true);
@@ -356,6 +373,7 @@ export function FeedItemModal(props: {
           )}
         </div>
 
+        <RecommendationFeedback candidate={recommendationCandidate} compact />
         <footer class="fim-footer">
           <button type="button" class="btn btn-primary" onClick={onToggleSelect}>
             {selected ? <Check size={15} /> : <Sparkles size={15} />}

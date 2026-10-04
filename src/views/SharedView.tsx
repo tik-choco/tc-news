@@ -23,6 +23,9 @@ import {
 import { REACTION_EMOJI, REACTION_KINDS, type NewsArticle, type RadioProgram, type ReactionKind } from "../types";
 import { ArticleCard } from "../components/ArticleCard";
 import { ArticleReader } from "../components/ArticleReader";
+import { RecommendationFeedback } from "../components/RecommendationFeedback";
+import { articleCandidate } from "../lib/recommendationCandidates";
+import { useReadingInterest } from "../hooks/useReadingInterest";
 import { EmptyState } from "../components/EmptyState";
 import { ReactionBar } from "../components/ReactionBar";
 import { LOCALE_LABELS, useLocale, useT, type Locale } from "../lib/i18n";
@@ -403,6 +406,20 @@ export function SharedView(props: {
             body: liveProgress.body || active.body,
           }
         : active;
+
+  // Keep the source article identity across translations. Ranking hides the
+  // reader; private-room/own articles are outside the global recommendation pool.
+  const recommendationCandidate = useMemo(
+    () => active && source === "global" && active.authorDid !== ownDid
+      ? articleCandidate(active) : null,
+    [active, source, ownDid],
+  );
+  useReadingInterest(
+    rankingActive ? null : recommendationCandidate,
+    liveProgress && !cachedTranslation
+      ? "loading"
+      : displayArticle?.body ? "full" : displayArticle?.excerpt ? "summary" : "error",
+  );
 
   // Categories present in the current source's articles, fixed taxonomy
   // order — same derivation as ArticlesView's filter row.
@@ -964,6 +981,7 @@ export function SharedView(props: {
               </div>
 
               <ArticleReader article={displayArticle ?? active} />
+              {recommendationCandidate ? <RecommendationFeedback candidate={recommendationCandidate} compact /> : null}
             </>
           ) : (
             <EmptyState icon={Globe} title={t("shared.selectTitle")} description={t("shared.selectDesc")} />

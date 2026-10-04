@@ -4,11 +4,15 @@
 // article-first化に伴い、記事本体をメインコンテンツにする縦グリッドへ変更。
 import { useMemo, useState } from "preact/hooks";
 import type { JSX } from "preact";
-import { Globe, Network } from "lucide-preact";
+import { Globe, Network, Rss } from "lucide-preact";
 import type { NewsArticle } from "../types";
 import { ArticleCard } from "./ArticleCard";
 import { getLatestArticleEvaluations } from "../lib/articleEvaluation";
 import { useT } from "../lib/i18n";
+import type { InterestState } from "../lib/recommendationTypes";
+import { articleCandidate } from "../lib/recommendationCandidates";
+import { useRankedCandidates } from "../hooks/useRecommendations";
+import { RecommendationItem } from "./RecommendationItem";
 import "../styles/homeSections.css";
 
 /** デフォルトで表示する「あなたの記事」の件数。超えたらトグルで全件表示。 */
@@ -22,34 +26,51 @@ export function HomeArticleSections(props: {
   articles: NewsArticle[];
   onOpenArticle: (id: string) => void;
   briefingDisabled: boolean;
+  hasFeedItems: boolean;
   onBriefingClick: () => void;
+  onManageFeeds: () => void;
   /** グローバル記事(ミュート済み著者は除外済み)、新しい順。 */
   globalArticles: NewsArticle[];
   globalConnected: boolean;
   /** idありなら該当記事のリーダーへ、nullならグローバル一覧へ。 */
   onOpenGlobal: (id: string | null) => void;
+  recommendationState?: InterestState;
+  trackImpressions?: boolean;
 }): JSX.Element {
-  const { articles, onOpenArticle, briefingDisabled, onBriefingClick, globalArticles, globalConnected, onOpenGlobal } =
-    props;
+  const {
+    articles,
+    onOpenArticle,
+    briefingDisabled,
+    hasFeedItems,
+    onBriefingClick,
+    onManageFeeds,
+    globalArticles,
+    globalConnected,
+    onOpenGlobal,
+  } = props;
   const t = useT();
   const [showAll, setShowAll] = useState(false);
+  const hasOwnArticles = articles.length > 0;
 
   const visibleArticles = showAll ? articles : articles.slice(0, DEFAULT_VISIBLE_COUNT);
-  const visibleGlobalArticles = globalArticles.slice(0, GLOBAL_VISIBLE_COUNT);
+  const candidates = useMemo(() => globalArticles.map(articleCandidate), [globalArticles]);
+  const ranked = useRankedCandidates(candidates, props.recommendationState);
+  const globalById = useMemo(() => new Map(globalArticles.map((a) => [a.id, a])), [globalArticles]);
+  const visibleGlobalArticles = props.recommendationState
+    ? ranked.slice(0, GLOBAL_VISIBLE_COUNT).map((r) => globalById.get(r.candidate.id)!)
+    : globalArticles.slice(0, GLOBAL_VISIBLE_COUNT);
+  const rankedById = new Map(ranked.map((r) => [r.candidate.id, r]));
+  const impressionSession = useMemo(() => crypto.randomUUID(), [props.recommendationState]);
 
-  // Batch-load evaluation scores for all visible cards in one pass instead
-  // of re-parsing the whole evaluations blob per card on every render (see
-  // articleEvaluation.ts's getLatestArticleEvaluations).
-  const evaluationsById = useMemo(
-    () => getLatestArticleEvaluations(visibleArticles.map((a) => a.id)),
-    [visibleArticles],
-  );
+  // Evaluation records can change without changing the articles. Read once per
+  // render so closing the evaluator also refreshes cards in the expanded list.
+  const evaluationsById = getLatestArticleEvaluations(visibleArticles.map((a) => a.id));
 
-  return (
-    <>
-      <div class="feed-home-section">
-        <div class="feed-home-header">
-          <h2 class="feed-home-heading">{t("feed.homeArticlesHeading")}</h2>
+  const ownSection = (
+    <div key="own" class="feed-home-section">
+      <div class="feed-home-header">
+        <h2 class="feed-home-heading">{t("feed.homeArticlesHeading")}</h2>
+        {hasFeedItems ? (
           <button
             type="button"
             class="btn btn-primary"
@@ -60,55 +81,69 @@ export function HomeArticleSections(props: {
             <Network size={15} />
             {t("feed.briefingGenerate")}
           </button>
-        </div>
-        {articles.length === 0 ? (
-          <p class="feed-home-empty">{t("feed.homeArticlesEmpty")}</p>
         ) : (
-          <>
-            <div class="home-articles-grid">
-              {visibleArticles.map((article) => (
-                <ArticleCard
-                  key={article.id}
-                  article={article}
-                  onClick={onOpenArticle}
-                  evaluationScore={evaluationsById.get(article.id)?.overallScore ?? null}
-                />
-              ))}
-            </div>
-            {articles.length > DEFAULT_VISIBLE_COUNT ? (
-              <div class="home-show-toggle">
-                <button type="button" class="btn btn-ghost btn-small" onClick={() => setShowAll((prev) => !prev)}>
-                  {showAll ? t("feed.homeShowLess") : t("feed.homeShowAll", { count: articles.length })}
-                </button>
-              </div>
-            ) : null}
-          </>
+          <button type="button" class="btn btn-ghost" onClick={onManageFeeds}>
+            <Rss size={15} /> {t("feed.manageFeeds")}
+          </button>
         )}
       </div>
-
-      {/* グローバル記事ルーム(tc-global-articles)からP2Pで受信済みの記事を
-          表示するセクション。新規インストール直後で「あなたの記事」が空でも
-          ホームが寂しくならないよう、他ユーザーがすでに共有した記事を見せる。
-          カードクリックは「みんな」タブの該当リーダーへ遷移する。 */}
-      <div class="feed-global-section">
-        <div class="feed-home-header">
-          <h2 class="feed-home-heading">
-            <Globe size={16} /> {t("feed.globalHeading")}
-          </h2>
-          <button type="button" class="btn btn-ghost btn-small" onClick={() => onOpenGlobal(null)}>
-            {t("feed.globalSeeAll")}
-          </button>
-        </div>
-        {visibleGlobalArticles.length === 0 ? (
-          <p class="feed-home-empty">{globalConnected ? t("feed.globalEmpty") : t("feed.globalConnecting")}</p>
-        ) : (
+      {!hasOwnArticles ? (
+        <p class="feed-home-empty">
+          {t(hasFeedItems ? "feed.briefingGenerateHint" : "feed.homeArticlesEmpty")}
+        </p>
+      ) : (
+        <>
           <div class="home-articles-grid">
-            {visibleGlobalArticles.map((article) => (
-              <ArticleCard key={article.id} article={article} onClick={onOpenGlobal} />
+            {visibleArticles.map((article) => (
+              <ArticleCard
+                key={article.id}
+                article={article}
+                onClick={onOpenArticle}
+                evaluationScore={evaluationsById.get(article.id)?.overallScore ?? null}
+              />
             ))}
           </div>
-        )}
-      </div>
-    </>
+          {articles.length > DEFAULT_VISIBLE_COUNT ? (
+            <div class="home-show-toggle">
+              <button type="button" class="btn btn-ghost btn-small" onClick={() => setShowAll((prev) => !prev)}>
+                {showAll ? t("feed.homeShowLess") : t("feed.homeShowAll", { count: articles.length })}
+              </button>
+            </div>
+          ) : null}
+        </>
+      )}
+    </div>
   );
+
+  const globalSection = (
+    <div key="global" class="feed-global-section">
+      <div class="feed-home-header">
+        <h2 class="feed-home-heading">
+          <Globe size={16} /> {t("feed.globalHeading")}
+        </h2>
+        <button type="button" class="btn btn-ghost btn-small" onClick={() => onOpenGlobal(null)}>
+          {t("feed.globalSeeAll")}
+        </button>
+      </div>
+      {!hasOwnArticles && visibleGlobalArticles.length > 0 ? (
+        <p class="feed-home-intro">{t("feed.homeStartReading")}</p>
+      ) : null}
+      {visibleGlobalArticles.length === 0 ? (
+        <p class="feed-home-empty">{globalArticles.length > 0 ? t("recommendation.empty") : globalConnected ? t("feed.globalEmpty") : t("feed.globalConnecting")}</p>
+      ) : (
+        <div class="home-articles-grid">
+          {visibleGlobalArticles.map((article, position) => props.recommendationState ? (
+            <RecommendationItem key={article.id} entry={rankedById.get(article.id)!} position={position}
+              sessionId={impressionSession} enabled={props.recommendationState.enabled && props.trackImpressions !== false}
+              personalized={props.recommendationState.enabled && props.recommendationState.mode === "recommended"}>
+              <ArticleCard article={article} onClick={onOpenGlobal} />
+            </RecommendationItem>
+          ) : <ArticleCard key={article.id} article={article} onClick={onOpenGlobal} />)}
+        </div>
+      )}
+    </div>
+  );
+
+  // First-time readers see available news before the optional creation tools.
+  return <>{hasOwnArticles ? [ownSection, globalSection] : [globalSection, ownSection]}</>;
 }

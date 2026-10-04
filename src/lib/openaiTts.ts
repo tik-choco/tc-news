@@ -11,6 +11,8 @@
 //     field, unless the caller overrides it per playback via opts.openaiVoice.
 
 import type { SpeakSegmentsOptions, TtsPlayback } from "./tts";
+import { isNetworkProviderBaseUrl, roomIdFromBaseUrl, networkVoiceModelParam } from "./llmConfig";
+import { rooms } from "./network";
 
 /** Connection + voice info for one TTS call — the shape resolveVoice(cfg, "tts")
  * (lib/llmConfig.ts) returns once the shared config's tts entry is resolved
@@ -25,6 +27,9 @@ export interface OpenAiVoiceConfig {
 
 /** POSTs `text` to {baseUrl}/audio/speech and resolves with the returned audio Blob. Throws on HTTP/network errors. */
 export async function synthesizeSpeech(text: string, tts: OpenAiVoiceConfig): Promise<Blob> {
+  if (isNetworkProviderBaseUrl(tts.baseUrl)) return rooms.requestRoomTts(roomIdFromBaseUrl(tts.baseUrl), {
+    text, model: networkVoiceModelParam(tts.model), voice: tts.voice,
+  });
   const url = `${tts.baseUrl.replace(/\/+$/, "")}/audio/speech`;
   const res = await fetch(url, {
     method: "POST",

@@ -27,10 +27,7 @@ import {
 
 import type { AppSettings, MainTab, NewsArticle, RadioProgram, ReactionKind } from "./types";
 import { loadAppSettings, saveAppSettings, resolveInitialTab } from "./lib/appSettings";
-import { loadLlmConfig } from "./lib/llmConfig";
-import { loadProviderSettings } from "./lib/llmSettings";
 import { markOnboardingDone, shouldShowOnboarding, subscribeOnboardingRequests } from "./lib/onboarding";
-import { connectNetworkConsumer } from "./lib/network";
 import { loadMyArticles, upsertMyArticle, deleteMyArticle, saveSharedArticle } from "./lib/articleStore";
 import { upsertProgram } from "./lib/programStore";
 import { listProgramTranslations } from "./lib/programTranslationStore";
@@ -40,7 +37,6 @@ import { forwardArticleToGlobal } from "./lib/globalArticlesReader";
 import { readHash, writeHash, onHashChange } from "./lib/hashRoute";
 import { useTheme } from "./hooks/useTheme";
 import { useNetworkProviderHost } from "./hooks/useNetworkProviderHost";
-import { useNetworkModelSync } from "./hooks/useNetworkModelSync";
 import { useNewsRoom } from "./hooks/useNewsRoom";
 import { useUnreadShared } from "./hooks/useUnreadShared";
 import { ensureDidIdentity } from "./crypto/didIdentity";
@@ -57,6 +53,7 @@ import { SettingsView } from "./views/SettingsView";
 import { Onboarding } from "./components/Onboarding";
 import { JobQueueToast } from "./components/JobQueueToast";
 import { MiniPlayer } from "./components/MiniPlayer";
+import { MistBuildBanner } from "./components/MistBuildBanner";
 
 // Nav tab labels come from each domain's own catalog (feed.tabLabel etc.) so
 // the domain owner controls the wording; this file only wires icon + tab id.
@@ -148,6 +145,12 @@ export function App() {
     setShowOnboarding(false);
   }
 
+  function startReading() {
+    closeOnboarding();
+    // Reopening from Settings should lead back to news; preserve article links elsewhere.
+    if (tab === "settings") selectTab("feed");
+  }
+
   const theme = useTheme();
 
   // userName未設定時の表示名はローカライズされた「匿名」。
@@ -191,24 +194,7 @@ export function App() {
       });
   }, []);
 
-  // AI Network consumer: 設定で有効なら起動時に接続しておく(設定画面を開か
-  // なくても最初の生成からnetwork経由になるように)。以後のon/off・room変更は
-  // SettingsView側のeffectが引き継ぐ。
-  useEffect(() => {
-    const provider = loadProviderSettings();
-    const room = loadLlmConfig()?.network.roomId.trim() ?? "";
-    if (provider.networkConsumerEnabled && room) void connectNetworkConsumer(room);
-  }, []);
-
-  // AI Network provider: アプリ全体の寿命でホストする(設定画面を閉じても
-  // 提供が続くように)。SettingsViewには表示用にstatusを渡すだけ。
-  const networkProvider = useNetworkProviderHost();
-
-  // AI Network consumer: ルームが公開しているモデルをローカルのshared llm
-  // configへ取り込み、SettingsViewの接続先/モデル一覧に反映する
-  // (hooks/useNetworkModelSync.ts)。providerと同様アプリ全体の寿命で動かし、
-  // 設定画面を閉じていても取り込みが続くようにする。
-  useNetworkModelSync();
+  useNetworkProviderHost(tab === "settings");
 
   // #room=<roomId> startup handling: a one-shot deep link that switches the
   // active room, then clears the hash so the user's own navigation (or a
@@ -452,6 +438,7 @@ export function App() {
 
   return (
     <div class="app-shell">
+      <MistBuildBanner />
       <header class="app-header">
         <div class="app-header-brand">
           <Newspaper size={20} />
@@ -663,11 +650,16 @@ export function App() {
           />
         )}
         {tab === "settings" && (
-          <SettingsView settings={settings} onSettingsChange={handleSettingsChange} networkProvider={networkProvider} />
+          <SettingsView settings={settings} onSettingsChange={handleSettingsChange} />
         )}
       </main>
       {showOnboarding && (
-        <Onboarding settings={settings} onSettingsChange={handleSettingsChange} onClose={closeOnboarding} />
+        <Onboarding
+          settings={settings}
+          onSettingsChange={handleSettingsChange}
+          onStartReading={startReading}
+          onClose={closeOnboarding}
+        />
       )}
       <JobQueueToast />
       <MiniPlayer />

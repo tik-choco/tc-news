@@ -25,7 +25,6 @@
 //     waits for it, bounded by a timeout so callers never hang forever.
 
 import { emptyLlmConfig, loadLlmConfig, resolveVoice } from "./llmConfig";
-import { loadProviderSettings } from "./llmSettings";
 import { speakSegmentsOpenAi } from "./openaiTts";
 
 const MAX_CHUNK_LEN = 180;
@@ -36,7 +35,6 @@ export type TtsEngine = "openai" | "browser";
 /** "openai" when the local ttsEnabled toggle is on and the shared config's tts
  * entry resolves to a provider + non-empty model; otherwise "browser". */
 export function activeTtsEngine(): TtsEngine {
-  if (!loadProviderSettings().ttsEnabled) return "browser";
   const voice = resolveVoice(loadLlmConfig() ?? emptyLlmConfig(), "tts");
   return voice && voice.model.trim() !== "" ? "openai" : "browser";
 }

@@ -1,7 +1,7 @@
-// First-run wizard shown by app.tsx as a modal overlay: welcome -> LLM
-// connection -> nickname -> feature tour. Every step is skippable (the close
-// button works at any point) and closing counts as "done" — the flag is
-// owned by the caller via `onClose` (see lib/onboarding.ts), and the
+// First-run welcome lets readers enter the app immediately, with an optional
+// setup wizard: LLM connection -> nickname -> feature tour. Every step is
+// skippable, and leaving counts as "done" — the caller owns the flag via
+// `onStartReading` and `onClose` (see lib/onboarding.ts), and the
 // settings screen can re-open this component any time afterwards.
 import { useRef, useState } from "preact/hooks";
 import {
@@ -20,14 +20,16 @@ import {
   X,
 } from "lucide-preact";
 import type { AppSettings } from "../types";
-import { emptyLlmConfig, ensurePreset, ensureProvider, loadLlmConfig, resolvePreset } from "../lib/llmConfig";
+import { emptyLlmConfig, createProvider, patchProvider, resolveModel, normalizeBaseUrl, type ModelRefV1 } from "../lib/llmConfig";
+import { loadLlmConfig as readLlmConfig, migrateSharedLlmConfig } from "@tik-choco/mistai/llm-config";
 import { updateLlmConfig } from "../lib/llmConfigStore";
 import { requestChatCompletion } from "../lib/llm";
 import { ModelField } from "../views/SettingsView";
 import { useT } from "../lib/i18n";
 import "../styles/onboarding.css";
 
-const STEP_COUNT = 4;
+const SETUP_STEPS = ["llm", "name", "tour"] as const;
+type OnboardingStep = "welcome" | (typeof SETUP_STEPS)[number];
 
 interface LlmDraft {
   baseUrl: string;
@@ -53,16 +55,20 @@ function inputValue(event: Event): string {
 export function Onboarding(props: {
   settings: AppSettings;
   onSettingsChange: (next: AppSettings) => void;
+  onStartReading: () => void;
   onClose: () => void;
 }) {
   const t = useT();
-  const [step, setStep] = useState(0);
+  const [step, setStep] = useState<OnboardingStep>("welcome");
 
   // LLM draft starts from the shared config's current default preset so
   // re-running the wizard shows (and edits) the real current connection
   // instead of blank fields.
   const [llm, setLlm] = useState<LlmDraft>(() => {
-    const resolved = resolvePreset(loadLlmConfig() ?? emptyLlmConfig());
+    const cfg = readLlmConfig() ?? emptyLlmConfig();
+    // Reading the wizard draft alone does not persist anything. The shell owns load migration.
+    migrateSharedLlmConfig(cfg);
+    const resolved = resolveModel(cfg);
     return {
       baseUrl: resolved?.baseUrl ?? "",
       apiKey: resolved?.apiKey ?? "",
@@ -79,76 +85,43 @@ export function Onboarding(props: {
     setTestState({ phase: "idle" });
   }
 
-  // Tracks the provider/preset this wizard session is editing, so repeated
-  // saves (e.g. one per field edit + "test connection") update that same
-  // shared-config entry in place instead of appending a fresh one on every
-  // keystroke (ensureProvider/ensurePreset dedupe by content, not identity,
-  // so an in-progress edit wouldn't match its own prior save).
-  const createdRef = useRef<{ providerId: string; presetId: string } | null>(null);
-
+  const createdRef = useRef<string | null>(null);
   type SaveLlmDraftResult =
-    | { ok: true; presetId: string | null }
+    | { ok: true; ref: ModelRefV1 | null }
     | { ok: false; reason: "corrupted" | "write-failed" };
 
-  /** Persists the draft into the shared config (tc-shared-llm-config-v1) via
-   * updateLlmConfig()'s read-modify-write — never a stale in-memory
-   * snapshot — creating a provider+preset on first save and updating that
-   * same pair afterwards. Sets defaultPresetId only if it was still unset.
-   *
-   * A blank (trimmed) base URL is treated as "nothing to save yet" rather
-   * than persisted: ensureProvider("") would otherwise create — and
-   * possibly default-preset — an empty, unusable provider entry the moment
-   * the wizard reaches step 1. `presetId: null` signals callers there's
-   * nothing to test/advance-with yet, distinct from an actual save failure.
-   *
-   * Returns `ok: false` when updateLlmConfig() refused or lost the write
-   * (corrupted shared record, or a silently-dropped write e.g. full storage
-   * quota), so callers can surface that instead of silently proceeding as if
-   * the draft were saved. */
   function saveLlmDraft(): SaveLlmDraftResult {
-    const baseUrl = llm.baseUrl.trim();
-    if (baseUrl === "") {
-      return { ok: true, presetId: null };
-    }
-
-    let presetId = "";
-    const result = updateLlmConfig((cfg) => {
-      let providerId: string;
-      if (createdRef.current) {
-        providerId = createdRef.current.providerId;
-        presetId = createdRef.current.presetId;
-        const provider = cfg.providers.find((p) => p.id === providerId);
-        if (provider) {
-          provider.baseUrl = baseUrl;
-          provider.apiKey = llm.apiKey;
-        }
-        const preset = cfg.presets.find((p) => p.id === presetId);
-        if (preset) preset.model = llm.model.trim();
-      } else {
-        providerId = ensureProvider(cfg, { baseUrl, apiKey: llm.apiKey });
-        presetId = ensurePreset(cfg, { providerId, model: llm.model.trim() });
-        createdRef.current = { providerId, presetId };
+    const baseUrl = normalizeBaseUrl(llm.baseUrl);
+    if (!baseUrl) return { ok: true, ref: null };
+    let ref: ModelRefV1 | null = null;
+    const result = updateLlmConfig(cfg => {
+      let providerId = createdRef.current;
+      if (!providerId || !cfg.providers.some(p => p.id === providerId)) {
+        providerId = cfg.providers.find(p => normalizeBaseUrl(p.baseUrl) === baseUrl && p.apiKey === llm.apiKey)?.id ?? createProvider(cfg, baseUrl);
+        createdRef.current = providerId;
       }
-      if (cfg.defaultPresetId === "") cfg.defaultPresetId = presetId;
+      const provider = cfg.providers.find(p => p.id === providerId)!;
+      const model = llm.model.trim();
+      patchProvider(cfg, providerId, { baseUrl, apiKey: llm.apiKey, models: [...new Set([...(provider.models ?? []), ...(model ? [model] : [])])] });
+      ref = { providerId, model };
+      if (!cfg.defaultModel) cfg.defaultModel = ref;
     });
-
-    if (!result.ok) return { ok: false, reason: result.reason };
-    return { ok: true, presetId };
+    return result.ok ? { ok: true, ref } : { ok: false, reason: result.reason };
   }
 
   async function handleTest() {
     if (testState.phase === "busy") return;
-    // Save first so the test exercises the exact same preset lookup real
+    // Save first so the test exercises the exact same model reference real
     // article generation will use afterwards.
     const saveResult = saveLlmDraft();
     if (!saveResult.ok) {
       setTestState({ phase: "save-error", reason: saveResult.reason });
       return;
     }
-    if (saveResult.presetId === null) return; // blank base URL: nothing to test yet
+    if (saveResult.ref === null) return; // blank base URL: nothing to test yet
     setTestState({ phase: "busy" });
     try {
-      await requestChatCompletion(saveResult.presetId, [{ role: "user", content: t("onboarding.testMessage") }]);
+      await requestChatCompletion(saveResult.ref, [{ role: "user", content: t("onboarding.testMessage") }]);
       setTestState({ phase: "ok" });
     } catch (error) {
       setTestState({ phase: "error", message: error instanceof Error ? error.message : String(error) });
@@ -161,12 +134,12 @@ export function Onboarding(props: {
       setTestState({ phase: "save-error", reason: saveResult.reason });
       return;
     }
-    setStep(2);
+    setStep("name");
   }
 
   function handleNameNext() {
     props.onSettingsChange({ ...props.settings, userName: name.trim() });
-    setStep(3);
+    setStep("tour");
   }
 
   return (
@@ -182,7 +155,7 @@ export function Onboarding(props: {
           <X size={18} />
         </button>
 
-        {step === 0 && (
+        {step === "welcome" && (
           <div class="ob-body">
             <div class="ob-hero">
               <Sparkles size={36} />
@@ -193,7 +166,7 @@ export function Onboarding(props: {
           </div>
         )}
 
-        {step === 1 && (
+        {step === "llm" && (
           <div class="ob-body">
             <div class="ob-step-head">
               <Cpu size={22} />
@@ -263,7 +236,7 @@ export function Onboarding(props: {
           </div>
         )}
 
-        {step === 2 && (
+        {step === "name" && (
           <div class="ob-body">
             <div class="ob-step-head">
               <UserPlus size={22} />
@@ -286,7 +259,7 @@ export function Onboarding(props: {
           </div>
         )}
 
-        {step === 3 && (
+        {step === "tour" && (
           <div class="ob-body">
             <div class="ob-step-head">
               <Check size={22} />
@@ -330,37 +303,49 @@ export function Onboarding(props: {
         )}
 
         <footer class="ob-footer">
-          <div class="ob-dots" aria-hidden="true">
-            {Array.from({ length: STEP_COUNT }, (_, i) => (
-              <span key={i} class={"ob-dot" + (i === step ? " is-active" : "")} />
-            ))}
-          </div>
-          <div class="ob-footer-actions">
-            {step > 0 && step < 3 && (
-              <button class="ob-btn" type="button" onClick={() => setStep(step - 1)}>
+          {step !== "welcome" && (
+            <div class="ob-dots" aria-hidden="true">
+              {SETUP_STEPS.map((setupStep) => (
+                <span key={setupStep} class={"ob-dot" + (setupStep === step ? " is-active" : "")} />
+              ))}
+            </div>
+          )}
+          <div class={"ob-footer-actions" + (step === "welcome" ? " ob-welcome-actions" : "")}>
+            {(step === "llm" || step === "name") && (
+              <button
+                class="ob-btn"
+                type="button"
+                onClick={() => setStep(step === "llm" ? "welcome" : "llm")}
+              >
                 <ArrowLeft size={16} />
                 {t("onboarding.back")}
               </button>
             )}
-            {step === 0 && (
-              <button class="ob-btn ob-btn-accent" type="button" onClick={() => setStep(1)}>
-                {t("onboarding.start")}
-                <ArrowRight size={16} />
-              </button>
+            {step === "welcome" && (
+              <>
+                <button class="ob-btn ob-btn-accent" type="button" onClick={props.onStartReading}>
+                  <Newspaper size={16} />
+                  {t("onboarding.start")}
+                </button>
+                <button class="ob-btn" type="button" onClick={() => setStep("llm")}>
+                  {t("onboarding.setupCreation")}
+                  <ArrowRight size={16} />
+                </button>
+              </>
             )}
-            {step === 1 && (
+            {step === "llm" && (
               <button class="ob-btn ob-btn-accent" type="button" onClick={handleLlmNext}>
                 {t("onboarding.saveAndNext")}
                 <ArrowRight size={16} />
               </button>
             )}
-            {step === 2 && (
+            {step === "name" && (
               <button class="ob-btn ob-btn-accent" type="button" onClick={handleNameNext}>
                 {t("onboarding.next")}
                 <ArrowRight size={16} />
               </button>
             )}
-            {step === 3 && (
+            {step === "tour" && (
               <button class="ob-btn ob-btn-accent" type="button" onClick={props.onClose}>
                 <Check size={16} />
                 {t("onboarding.finish")}

@@ -1,37 +1,32 @@
-// "List TTS voices from an OpenAI-compatible endpoint" helper for the
-// settings screen's TTS voice field.
-//
-// The fetch/parse logic and the static OpenAI voice set now live in mistai
-// (`fetchVoices`/`OPENAI_TTS_VOICES`, promoted from this file's former
-// standalone implementation in mistai v0.6.0 — see
-// tc-docs/drafts/tts-voice-selection-v1.md §2.5/§3.4 Tier3). This file is now
-// just an adapter: mistai's `fetchVoices(baseUrl, apiKey?, fetchFn?)` takes
-// positional args and never throws (resolves `[]` when neither
-// `{baseUrl}/audio/voices` nor `{baseUrl}/voices` returns a usable list),
-// whereas `useFetchedOptions` (lib/models.ts) expects a
-// `(config: {baseUrl, apiKey}, fetchFn?) => Promise<string[]>` fetcher. The
-// wrapper below bridges the argument shapes. Because mistai's fetchVoices no
-// longer rejects on a missing endpoint, `status` from `useFetchedOptions`
-// will settle on "done" (with an empty `options` array) instead of "error"
-// in that case — callers that fall back to `OPENAI_TTS_VOICES` must check
-// `options.length === 0` rather than `status === "error"` (see
-// SettingsView.tsx's VoiceField, updated alongside this file).
-
-import { fetchVoices as mistaiFetchVoices, OPENAI_TTS_VOICES, type FetchFn } from "@tik-choco/mistai";
-import { useFetchedOptions, type ModelOptionsState } from "./models";
-
+import { useEffect, useState } from "preact/hooks";
+import { fetchVoices as mistaiFetchVoices, OPENAI_TTS_VOICES, type FetchFn, type ConsumerStatus } from "@tik-choco/mistai";
+import { isNetworkProviderBaseUrl, roomIdFromBaseUrl } from "./llmConfig";
+import { rooms } from "./network";
 export { OPENAI_TTS_VOICES };
 
-/** Adapter from mistai's `fetchVoices(baseUrl, apiKey?, fetchFn?)` to the
- * `(config, fetchFn?)` shape `useFetchedOptions` expects. */
-export async function fetchVoices(
-  config: { baseUrl: string; apiKey: string },
-  fetchFn: FetchFn = fetch,
-): Promise<string[]> {
+export async function fetchVoices(config: { baseUrl: string; apiKey: string }, fetchFn: FetchFn = fetch): Promise<string[]> {
+  if (isNetworkProviderBaseUrl(config.baseUrl)) {
+    const client = rooms.roomConsumer(roomIdFromBaseUrl(config.baseUrl));
+    return client.status.phase === "connected" ? client.status.voices ?? [] : [];
+  }
   return mistaiFetchVoices(config.baseUrl, config.apiKey, fetchFn);
 }
 
-/** Thin wrapper around {@link useFetchedOptions} for the TTS voice field. */
-export function useVoiceOptions(baseUrl: string, apiKey: string): ModelOptionsState {
-  return useFetchedOptions(baseUrl, apiKey, fetchVoices, "errors.voiceListFailed");
+// The program player follows the selected HTTP endpoint or that room's live voices.
+export function useVoiceOptions(baseUrl: string, apiKey: string) {
+  const [state, setState] = useState<{ options: string[]; status: "idle" | "loading" | "done" }>({ options: [], status: "idle" });
+  useEffect(() => {
+    if (!baseUrl) { setState({ options: [], status: "idle" }); return; }
+    if (isNetworkProviderBaseUrl(baseUrl)) {
+      const client = rooms.roomConsumer(roomIdFromBaseUrl(baseUrl));
+      const sync = (status: ConsumerStatus) => setState({ options: status.phase === "connected" ? status.voices ?? [] : [], status: status.phase === "connected" ? "done" : "loading" });
+      sync(client.status);
+      return client.onStatusChange(sync);
+    }
+    let cancelled = false;
+    setState({ options: [], status: "loading" });
+    void mistaiFetchVoices(baseUrl, apiKey).then(options => { if (!cancelled) setState({ options, status: "done" }); });
+    return () => { cancelled = true; };
+  }, [baseUrl, apiKey]);
+  return state;
 }

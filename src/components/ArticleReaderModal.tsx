@@ -251,11 +251,13 @@ export function ArticleReaderModal(props: {
               <button
                 type="button"
                 class="reader-modal-eval-score-btn"
-                title={t("articles.evalOverall")}
-                aria-label={t("articles.evalOverall")}
+                title={t("articles.evalScope")}
+                aria-expanded={panelOpen}
                 onClick={() => setPanelOpen((open) => !open)}
               >
-                <span class="eval-score-pill">{Math.round(latestEval.overallScore)}</span>
+                <span class="eval-score-pill">
+                  {t("articles.evalScoreLabel", { score: Math.round(latestEval.overallScore) })}
+                </span>
               </button>
             ) : null}
             <button

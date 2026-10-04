@@ -31,8 +31,8 @@
 // pass missed (e.g. mutation-XSS-style edge cases), exactly like
 // ArticleReader.tsx already relies on it for marked() output.
 import DOMPurify from "dompurify";
-import type { AppSettings } from "../types";
 import { loadAppSettings } from "./appSettings";
+import { fetchExternalHtml } from "./externalHtml";
 import { kvGetSync, kvSetSync } from "./kvStore";
 
 export interface ExtractedPage {
@@ -342,44 +342,13 @@ function setNegative(url: string): void {
 }
 
 // ---------------------------------------------------------------------------
-// Fetch: direct, then via CORS proxy; ~12s timeout. Same shape as
-// rss.ts/linkPreview.ts's fetch fallback.
+// Fetch: use the shared article/preview transport, then extract and cache.
 // ---------------------------------------------------------------------------
-
-const FETCH_TIMEOUT_MS = 12_000;
-
-async function fetchWithTimeout(url: string): Promise<string> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-  try {
-    const res = await fetch(url, { signal: controller.signal });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.text();
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-async function fetchHtml(url: string, settings: AppSettings): Promise<string | null> {
-  try {
-    return await fetchWithTimeout(url);
-  } catch {
-    // fall through to proxy below
-  }
-  if (settings.corsProxy) {
-    try {
-      return await fetchWithTimeout(settings.corsProxy + encodeURIComponent(url));
-    } catch {
-      // fall through to null below
-    }
-  }
-  return null;
-}
 
 // Dedupe concurrent requests for the same URL.
 const inFlight = new Map<string, Promise<ExtractedPage | null>>();
 
-/** Fetch (direct, then via corsProxy from loadAppSettings()) + extract +
+/** Fetch (local dev relay or direct/configured CORS proxy) + extract +
  * sanitize + cache. Never rejects — resolves null on any failure (network,
  * timeout, or "no article content found"). Concurrent calls for the same
  * URL share one in-flight request. */
@@ -395,7 +364,7 @@ export function fetchReadablePage(url: string): Promise<ExtractedPage | null> {
   const promise = (async (): Promise<ExtractedPage | null> => {
     try {
       const settings = loadAppSettings();
-      const rawHtml = await fetchHtml(url, settings);
+      const rawHtml = await fetchExternalHtml(url, settings.corsProxy);
       if (rawHtml === null) {
         setNegative(url);
         return null;

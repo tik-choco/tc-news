@@ -161,7 +161,7 @@ async function translateTitleExcerpt(
   // gracefully below instead of failing the whole translation.
   let responseText: string;
   try {
-    responseText = await requestChatCompletion(opts.profileId, messages, { temperature: 0.2 });
+    responseText = await requestChatCompletion(opts.profileId, messages);
   } catch (err) {
     // Rethrow cancellation as-is so the queue (lib/jobQueue) can tell it
     // apart from an actual failure by err.name, instead of burying it in
@@ -193,7 +193,7 @@ async function translateChunk(
 
   let responseText: string;
   try {
-    responseText = await requestChatCompletion(opts.profileId, messages, { temperature: 0.2, onDelta });
+    responseText = await requestChatCompletion(opts.profileId, messages, { onDelta });
   } catch (err) {
     // Same reasoning as translateTitleExcerpt: don't wrap cancellation.
     if (err instanceof Error && err.name === "AbortError") throw err;
