@@ -17,6 +17,7 @@ const ja = {
   urlPlaceholder: "フィードURL(https://...)",
   labelPlaceholder: "表示名(空欄で自動取得)",
   addFeed: "追加",
+  manageFeeds: "フィードを登録・管理",
   noFeeds: "フィードが登録されていません",
   removeFeedAria: "{name}を削除",
   editFeedAria: "{name}を編集",
@@ -45,15 +46,16 @@ const ja = {
   // Home tab: "your articles" section (merged from the former articles tab)
   homeArticlesHeading: "あなたの記事",
   homeArticlesEmpty:
-    "まだ記事がありません。下の新着からアイテムを選んで生成するか、「今日のブリーフィングを生成」を試してみましょう。",
+    "自分の情報源を登録すると、届いたニュースを読んだり、AIで記事にまとめたりできます。",
+  homeStartReading: "共有記事は設定なしで読めます。気になる記事を開いてみましょう。",
   briefingGenerate: "今日のブリーフィングを生成",
   briefingGenerateHint: "最新の新着アイテムをAI編集部が複数の記事にまとめます",
   // Home tab: "everyone's news" section (articles received from the global
   // room). Named after the shared tab ("みんな") so users connect the two.
   globalHeading: "みんなのニュース",
   globalSeeAll: "すべて見る",
-  globalConnecting: "みんなのニュースを受信しています...",
-  globalEmpty: "まだみんなの記事が届いていません。誰かが共有すると、ここに表示されます。",
+  globalConnecting: "共有ニュースへの接続を待っています。自分のフィードを登録して読み始めることもできます。",
+  globalEmpty: "共有記事はまだ届いていません。自分のフィードを登録して読み始められます。",
   // Home tab: article grids show a few cards, with a toggle for the rest
   homeShowAll: "すべて表示 ({count})",
   homeShowLess: "表示を減らす",
@@ -99,6 +101,7 @@ const en: typeof ja = {
   urlPlaceholder: "Feed URL (https://...)",
   labelPlaceholder: "Display name (auto-detected if left blank)",
   addFeed: "Add",
+  manageFeeds: "Manage feeds",
   noFeeds: "No feeds registered",
   removeFeedAria: "Remove {name}",
   editFeedAria: "Edit {name}",
@@ -124,13 +127,14 @@ const en: typeof ja = {
   removeFromSelection: "Unselect",
   homeArticlesHeading: "Your articles",
   homeArticlesEmpty:
-    'No articles yet — select items below to generate one, or try "Generate today\'s briefing".',
+    "Add your news sources to read their updates or turn them into articles with AI.",
+  homeStartReading: "Read shared articles without setup. Open a story that interests you.",
   briefingGenerate: "Generate today's briefing",
   briefingGenerateHint: "The AI newsroom turns the latest items into articles",
   globalHeading: "Everyone's news",
   globalSeeAll: "See all",
-  globalConnecting: "Receiving everyone's news...",
-  globalEmpty: "No articles from others yet. When someone shares one, it will appear here.",
+  globalConnecting: "Waiting to connect to shared news. You can also add your own feeds to start reading.",
+  globalEmpty: "No shared articles have arrived yet. Add your own feeds to start reading.",
   homeShowAll: "Show all ({count})",
   homeShowLess: "Show fewer",
   inboxHeading: "Incoming items",

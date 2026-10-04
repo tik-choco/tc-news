@@ -17,7 +17,7 @@
 // Persisted via kvStore (mist KV, OPFS-backed; localStorage only as a
 // pre-hydration/fallback path — see kvStore.ts's module header).
 
-import { KV_VALUE_SOFT_LIMIT_BYTES, kvGetSync, kvSetSync, utf8ByteLength } from "./kvStore";
+import { loadKvRecords, persistKvRecords } from "./kvRecordStore";
 
 const PARTIAL_FEED_TRANSLATIONS_KEY = "tc-news:partial-feed-translations";
 const MAX_PARTIAL_FEED_TRANSLATIONS = 3;
@@ -73,35 +73,11 @@ function coercePartialFeedTranslation(value: unknown): PartialFeedTranslation | 
 }
 
 function loadAll(): Record<string, PartialFeedTranslation> {
-  try {
-    const raw = kvGetSync(PARTIAL_FEED_TRANSLATIONS_KEY);
-    if (!raw) return {};
-    const parsed: unknown = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-    const out: Record<string, PartialFeedTranslation> = {};
-    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
-      const record = coercePartialFeedTranslation(v);
-      if (record) out[k] = record;
-    }
-    return out;
-  } catch {
-    return {};
-  }
+  return loadKvRecords(PARTIAL_FEED_TRANSLATIONS_KEY, coercePartialFeedTranslation);
 }
 
 function persistAll(all: Record<string, PartialFeedTranslation>): void {
-  // Same byte-level safety net as translationStore.ts's persistAll: the mist
-  // KV rejects any single value over ~1MiB, and MAX_PARTIAL_FEED_TRANSLATIONS
-  // alone doesn't bound byte size (a single in-progress job can already carry
-  // close to MAX_TRANSLATE_HTML_CHARS worth of chunk text). Trim oldest-first
-  // (by updatedAt) until the serialized blob is back under the soft limit.
-  let entries = Object.entries(all);
-  let serialized = JSON.stringify(Object.fromEntries(entries));
-  while (entries.length > 0 && utf8ByteLength(serialized) > KV_VALUE_SOFT_LIMIT_BYTES) {
-    entries = entries.sort((a, b) => b[1].updatedAt - a[1].updatedAt).slice(0, -1);
-    serialized = JSON.stringify(Object.fromEntries(entries));
-  }
-  kvSetSync(PARTIAL_FEED_TRANSLATIONS_KEY, serialized);
+  persistKvRecords(PARTIAL_FEED_TRANSLATIONS_KEY, all, (record) => record.updatedAt);
 }
 
 /** フィードアイテム×言語の途中保存済み翻訳(あれば)。無ければnull — 呼び出し側は

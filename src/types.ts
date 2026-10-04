@@ -100,10 +100,10 @@ export interface AppSettings {
   corsProxy: string;          // 例 "https://corsproxy.io/?url=" — encodeURIComponent(feedUrl) を後置
   refreshIntervalMin: number; // RSS自動更新間隔(分)、0で無効。既定30
   autoGenerate: boolean;      // 新着アイテムから記事を自動生成。既定 false
-  globalShare: boolean;       // 共有時にグローバルルーム(tc-global-articles)へも配信。既定 true
+  globalShare: boolean;       // 共有時にグローバルルーム(tc-global-articles)へも配信。新規利用時の既定 false
   showMediaPreviews: boolean; // サムネイル/リンクプレビュー(OGP自動取得)を表示。既定 true
   programRuby: boolean;       // 番組台本の生成時に漢字等へルビ({漢字|かんじ}記法)を付ける。既定 false
-  shareMode: "auto" | "manual"; // 記事生成後の共有方式。"auto"=自動でルームへ共有、"manual"=手動共有のみ。既定 "auto"
+  shareMode: "auto" | "manual"; // 記事生成後の共有方式。"auto"=自動でルームへ共有、"manual"=手動共有のみ。新規利用時の既定 "manual"
 }
 
 export type MainTab = "feed" | "shared" | "program" | "settings";

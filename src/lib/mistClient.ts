@@ -28,6 +28,7 @@ export type { MediaEventPayload };
 import type { SharedStorageBackend } from "../crypto/didIdentity";
 import { safeSetItem } from "./safeStorage";
 import { mistSignalingConfig } from "./mistSignaling";
+import { captureMistBuildInfo, markMistLoadError } from "./mistBuildInfo";
 
 const SHARED_STORAGE_NAME = "tc-shared";
 
@@ -83,7 +84,13 @@ export async function getNode(): Promise<InstanceType<typeof MistNode>> {
       // Only peers sharing the same invite salt/code discover each other, so
       // pass the family-wide namespace or this node meets no one.
       const n = new MistNode(localNodeId(), mistSignalingConfig());
-      await n.init();
+      try {
+        await n.init();
+      } catch (error) {
+        markMistLoadError();
+        throw error;
+      }
+      captureMistBuildInfo();
       n.onEvent((eventType, fromId, payload, roomId) => {
         eventListeners.forEach((l) => l(eventType, fromId, payload, roomId ?? ""));
       });

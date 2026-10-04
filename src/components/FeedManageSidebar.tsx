@@ -2,7 +2,7 @@
 // 追加/編集/削除/更新は普段は畳んでおける折りたたみ式サイドバーに分離した。
 // 中身(フォーム/一覧/インライン編集)はHEAD版FeedViewの <aside class="feed-sidebar">
 // をそのまま移設したもので、挙動は変えていない。
-import { useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import type { JSX } from "preact";
 import { PanelLeftClose, Pencil, Plus, RefreshCw, Rss, Trash2 } from "lucide-preact";
 import type { FeedSource } from "../types";
@@ -14,6 +14,8 @@ export function FeedManageSidebar(props: {
   feeds: FeedSource[];
   collapsed: boolean;
   onToggleCollapsed: () => void;
+  /** Increment to open/focus the add-feed form after the expanded input mounts. */
+  focusRequest?: number;
   refreshing: boolean;
   lastRefreshedAt: number | null;
   errors: Record<string, string>;
@@ -27,6 +29,7 @@ export function FeedManageSidebar(props: {
     feeds,
     collapsed,
     onToggleCollapsed,
+    focusRequest = 0,
     refreshing,
     lastRefreshedAt,
     errors,
@@ -44,6 +47,13 @@ export function FeedManageSidebar(props: {
   const [editingFeedId, setEditingFeedId] = useState<string | null>(null);
   const [draftLabel, setDraftLabel] = useState("");
   const [draftUrl, setDraftUrl] = useState("");
+  const feedUrlRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (focusRequest === 0) return;
+    feedUrlRef.current?.focus();
+    feedUrlRef.current?.scrollIntoView({ block: "nearest" });
+  }, [focusRequest]);
 
   function handleAddFeed(e: Event) {
     e.preventDefault();
@@ -131,6 +141,8 @@ export function FeedManageSidebar(props: {
 
       <form class="feed-add-form" onSubmit={handleAddFeed}>
         <input
+          ref={feedUrlRef}
+          aria-label={t("feed.urlPlaceholder")}
           value={newUrl}
           placeholder={t("feed.urlPlaceholder")}
           onInput={(e) => setNewUrl(e.currentTarget.value)}

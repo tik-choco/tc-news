@@ -10,7 +10,8 @@
 // localStorage only as a pre-hydration/fallback path — see kvStore.ts's
 // module header).
 
-import { kvGetSync, kvSetSync } from "./kvStore";
+import { kvSetSync } from "./kvStore";
+import { loadKvRecords } from "./kvRecordStore";
 
 const FEED_TRANSLATIONS_KEY = "tc-news:feed-translations";
 const MAX_FEED_TRANSLATIONS = 20;
@@ -56,20 +57,7 @@ function coerceFeedItemTranslation(value: unknown): FeedItemTranslation | null {
 }
 
 function loadAll(): Record<string, FeedItemTranslation> {
-  try {
-    const raw = kvGetSync(FEED_TRANSLATIONS_KEY);
-    if (!raw) return {};
-    const parsed: unknown = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-    const out: Record<string, FeedItemTranslation> = {};
-    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
-      const record = coerceFeedItemTranslation(v);
-      if (record) out[k] = record;
-    }
-    return out;
-  } catch {
-    return {};
-  }
+  return loadKvRecords(FEED_TRANSLATIONS_KEY, coerceFeedItemTranslation);
 }
 
 function persistAll(all: Record<string, FeedItemTranslation>): void {

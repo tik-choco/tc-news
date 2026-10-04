@@ -13,16 +13,17 @@ const ja = {
   close: "閉じる",
   back: "戻る",
   next: "次へ",
-  start: "はじめる",
+  start: "ニュースを読む",
+  setupCreation: "記事作成を設定",
   saveAndNext: "保存して次へ",
   finish: "完了",
 
   // Step 0: welcome
   welcomeTitle: "TC News へようこそ!",
   welcomeBody1:
-    "TC News は、RSSフィードのニュースをもとにAIが記事を書き、P2Pルームでみんなと共有できるニュースアプリです。",
+    "みんなが共有したニュースを読んだり、RSSフィードからAIで記事を作成したりできるアプリです。",
   welcomeBody2:
-    "まずは2つだけ準備しましょう:LLMの接続設定と、共有で使うニックネームです。どちらもあとから設定画面でいつでも変更できます。",
+    "読むだけなら、LLMの接続設定やAPIキーは不要です。まずはニュースを読んでみましょう。記事を作成したくなったら、設定画面からいつでも準備できます。",
 
   // Step 1: LLM connection
   llmTitle: "LLMの接続設定",
@@ -58,9 +59,9 @@ const ja = {
   tourSharedDesc: "P2Pルームとグローバル配信で、みんなの記事をリアルタイムに読めます",
   tourSettingsTitle: "設定",
   tourSettingsDesc: "LLM設定、AIネットワーク、言語やテーマを変更できます",
-  tourShareTitle: "自動共有",
+  tourShareTitle: "記事の共有",
   tourShareDesc:
-    "既定では、生成した記事は自動でルームに共有されます。手動にしたいときは設定の『記事の共有モード』からいつでも変更できます。",
+    "公開先や、手動・自動の共有方法は設定画面で選べます。共有する前に、記事の内容と共有設定を確認しましょう。",
   tourOutro: "設定はすべて自動保存されます。それでは、楽しんでください!",
 };
 
@@ -73,15 +74,16 @@ const en: typeof ja = {
   close: "Close",
   back: "Back",
   next: "Next",
-  start: "Get started",
+  start: "Read news",
+  setupCreation: "Set up article creation",
   saveAndNext: "Save and continue",
   finish: "Done",
 
   welcomeTitle: "Welcome to TC News!",
   welcomeBody1:
-    "TC News is a news app where AI writes articles from your RSS feeds and you share them with everyone over P2P rooms.",
+    "Read news shared by others, or create your own articles with AI from RSS feeds.",
   welcomeBody2:
-    "Let's set up just two things: your LLM connection and the nickname used when sharing. You can change both anytime in Settings.",
+    "Reading needs no LLM connection or API key. Start with the news, and set up article creation anytime in Settings.",
 
   llmTitle: "Connect an LLM",
   llmIntro:
@@ -114,9 +116,9 @@ const en: typeof ja = {
   tourSharedDesc: "Read everyone's articles in real time via P2P rooms and the global feed",
   tourSettingsTitle: "Settings",
   tourSettingsDesc: "Manage LLM settings, the AI network, language, and theme",
-  tourShareTitle: "Auto share",
+  tourShareTitle: "Article sharing",
   tourShareDesc:
-    "By default, generated articles are shared to your room automatically. To switch to manual, change \"Article share mode\" in Settings anytime.",
+    "Choose where to publish and whether to share manually or automatically in Settings. Review your article and sharing settings before publishing.",
   tourOutro: "Everything is saved automatically. Enjoy!",
 };
 

@@ -8,6 +8,9 @@
 // `typeof ja` so TypeScript flags any key present in one but missing in the
 // other. Additional languages live in ../locales/<lang>.ts.
 const ja = {
+  developerMode: "開発者モード",
+  developerModeHint: "記事の推薦理由を表示します。mistlibの使用バージョンは変更しません。",
+
   tabLabel: "設定",
   title: "設定",
   tabsAriaLabel: "設定タブ",
@@ -134,6 +137,9 @@ const ja = {
 };
 
 const en: typeof ja = {
+  developerMode: "Developer mode",
+  developerModeHint: "Show article recommendation reasons. Does not change the mistlib version in use.",
+
   tabLabel: "Settings",
   title: "Settings",
   tabsAriaLabel: "Settings tabs",

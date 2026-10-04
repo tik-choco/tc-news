@@ -201,7 +201,7 @@ async function translateTitleSummary(
 
   let responseText: string;
   try {
-    responseText = await requestChatCompletion(opts.profileId, messages, { temperature: 0.2 });
+    responseText = await requestChatCompletion(opts.profileId, messages);
   } catch (err) {
     // Rethrow cancellation as-is so the queue (lib/jobQueue) can
     // tell it apart from an actual failure by err.name, instead of burying
@@ -241,7 +241,6 @@ async function translateHtmlChunk(
   let responseText: string;
   try {
     responseText = await requestChatCompletion(opts.profileId, messages, {
-      temperature: 0.2,
       onDelta: onDelta ? (_delta, full) => onDelta(full) : undefined,
     });
   } catch (err) {

@@ -15,10 +15,10 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   corsProxy: "https://corsproxy.io/?url=",
   refreshIntervalMin: 30,
   autoGenerate: false,
-  globalShare: true,
+  globalShare: false,
   showMediaPreviews: true,
   programRuby: false,
-  shareMode: "auto",
+  shareMode: "manual",
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -43,11 +43,12 @@ function sanitizeAppSettings(value: unknown): AppSettings {
     corsProxy: typeof value.corsProxy === "string" ? value.corsProxy : DEFAULT_APP_SETTINGS.corsProxy,
     refreshIntervalMin,
     autoGenerate: value.autoGenerate === true,
-    // 既存ユーザー(キー無し)はtrue扱い — グローバル配信は既定オン。
+    // Preserve legacy installs that saved settings before this field existed.
+    // Fresh installs use DEFAULT_APP_SETTINGS instead.
     globalShare: value.globalShare !== false,
     showMediaPreviews: typeof value.showMediaPreviews === "boolean" ? value.showMediaPreviews : true,
     programRuby: value.programRuby === true,
-    // 既存ユーザー(キー無し)はauto扱い — 記事生成後の自動共有は既定オン。
+    // Keep legacy auto-sharing; only fresh installs default to manual sharing.
     shareMode: value.shareMode === "manual" ? "manual" : "auto",
   };
 }

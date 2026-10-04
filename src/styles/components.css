@@ -172,7 +172,7 @@ svg.spin {
   white-space: nowrap;
 }
 
-/* Small numeric pill showing an article's latest evaluation overall score
+/* Small labeled pill showing an article's latest AI writing score
    (0-100), dropped into ArticleCard's meta row. */
 .eval-score-pill {
   display: inline-flex;
@@ -187,6 +187,7 @@ svg.spin {
   color: var(--text);
   background: var(--surface-3);
   border-radius: var(--radius-pill);
+  white-space: nowrap;
 }
 
 /* --- Form fields ---------------------------------------------------------- */
@@ -581,11 +582,17 @@ textarea:disabled {
   border-top: 1px solid var(--border);
 }
 
+.article-reader-sources-jump {
+  align-self: flex-start;
+  margin-top: var(--space-3);
+}
+
 .article-reader-sources-title {
   margin-bottom: var(--space-3);
   font-size: 0.85rem;
   font-weight: 700;
   color: var(--text-subtle);
+  scroll-margin-top: var(--space-4);
 }
 
 .article-reader-sources-list {
@@ -710,6 +717,13 @@ textarea:disabled {
   font-size: 0.8rem;
   font-weight: 600;
   color: var(--text-subtle);
+}
+
+.evaluation-panel-scope {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  line-height: 1.6;
 }
 
 .evaluation-panel-axes {

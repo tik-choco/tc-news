@@ -1,7 +1,9 @@
 import type { Messages } from "../messages";
+import { recommendation } from "../catalog/recommendation";
 
 // Español
 export const es: Messages = {
+  recommendation: recommendation.es,
   common: {
     cancel: "Cancelar",
     save: "Guardar",
@@ -65,16 +67,18 @@ export const es: Messages = {
     addToSelection: "Seleccionar para generar",
     removeFromSelection: "Anular selección",
     homeArticlesHeading: "Tus artículos",
+    manageFeeds: "Añadir y gestionar fuentes",
+    homeStartReading: "Lee artículos compartidos sin configurar nada. Abre uno que te interese.",
     homeArticlesEmpty:
-      'Aún no hay artículos: selecciona elementos abajo para generar uno, o prueba "Generar el resumen de hoy".',
+      "Añade tus fuentes de noticias para leer sus novedades o convertirlas en artículos con IA.",
     briefingGenerate: "Generar el resumen de hoy",
     briefingGenerateHint: "La redacción de IA convierte los últimos elementos en artículos",
     // Home tab: "everyone's news" section (articles received from the global
     // room). Named after the shared tab ("Comunidad") so users connect the two.
     globalHeading: "Noticias de la comunidad",
     globalSeeAll: "Ver todas",
-    globalConnecting: "Recibiendo las noticias de la comunidad...",
-    globalEmpty: "Aún no hay artículos de la comunidad. Cuando alguien comparta uno, aparecerá aquí.",
+    globalConnecting: "Esperando la conexión con las noticias compartidas. También puedes añadir tus propias fuentes para empezar a leer.",
+    globalEmpty: "Aún no se han recibido artículos compartidos. Añade tus propias fuentes para empezar a leer.",
     // Home tab: article grids show a few cards, with a toggle for the rest
     homeShowAll: "Mostrar todos ({count})",
     homeShowLess: "Mostrar menos",
@@ -114,16 +118,19 @@ export const es: Messages = {
     selectTitle: "Selecciona un artículo",
     selectDescription: "Elige un artículo de la lista de la izquierda para leer el texto completo aquí.",
     sourcesTitle: "Fuentes",
+    sourcesJump: "Ver fuentes ({count})",
     justNow: "justo ahora",
     openInChatLink: "Ver en tc-chat",
     sentToChat: "Enviado a tc-chat",
-    evaluate: "Evaluar artículo",
+    evaluate: "Evaluar la redacción con IA",
     evaluating: "Evaluando...",
-    evalOverall: "Puntuación general",
+    evalOverall: "Puntuación orientativa de redacción por IA",
+    evalScoreLabel: "Redacción IA: {score}/100",
+    evalScope: "Evaluación orientativa de la redacción por IA. No se ha contrastado con el contenido de las fuentes ni se han verificado los hechos.",
     evalNotes: "Resumen",
     evalSuggestions: "Sugerencias",
     evalCategoryApplied: 'Categoría establecida en "{category}"',
-    axis_accuracy_score: "Fidelidad a los hechos",
+    axis_accuracy_score: "Presentación de las fuentes",
     axis_clarity_score: "Claridad",
     axis_coverage_score: "Cobertura",
     axis_headline_score: "Calidad del titular",
@@ -190,6 +197,8 @@ export const es: Messages = {
   },
 
   settings: {
+    developerMode: "Modo desarrollador",
+    developerModeHint: "Muestra los motivos de las recomendaciones. No cambia la versión de mistlib en uso.",
     tabLabel: "Ajustes",
     title: "Ajustes",
     tabsAriaLabel: "Pestañas de ajustes",
@@ -361,15 +370,16 @@ export const es: Messages = {
     close: "Cerrar",
     back: "Atrás",
     next: "Siguiente",
-    start: "Empezar",
+    start: "Leer noticias",
+    setupCreation: "Configurar la creación de artículos",
     saveAndNext: "Guardar y continuar",
     finish: "Finalizar",
 
     welcomeTitle: "¡Bienvenido a TC News!",
     welcomeBody1:
-      "TC News es una app de noticias en la que la IA redacta artículos a partir de tus fuentes RSS y los compartes con todos en salas P2P.",
+      "Lee noticias compartidas por otros o crea tus propios artículos con IA a partir de fuentes RSS.",
     welcomeBody2:
-      "Empecemos configurando solo dos cosas: la conexión con el LLM y el apodo que se usará al compartir. Ambos se pueden cambiar en cualquier momento desde Ajustes.",
+      "Para leer no necesitas una conexión con un LLM ni una clave de API. Empieza con las noticias y configura la creación de artículos cuando quieras desde Ajustes.",
 
     llmTitle: "Configuración de la conexión LLM",
     llmIntro:
@@ -402,9 +412,9 @@ export const es: Messages = {
     tourSharedDesc: "Lee en tiempo real los artículos de todos a través de salas P2P y la difusión global",
     tourSettingsTitle: "Ajustes",
     tourSettingsDesc: "Cambia la configuración de LLM, la AI Network, el idioma y el tema",
-    tourShareTitle: "Compartir automático",
+    tourShareTitle: "Compartir artículos",
     tourShareDesc:
-      "De forma predeterminada, los artículos generados se comparten en tu sala automáticamente. Si prefieres el modo manual, puedes cambiarlo en cualquier momento desde \"Modo de compartir artículos\" en Ajustes.",
+      "Elige en Ajustes dónde publicar y si quieres compartir de forma manual o automática. Revisa el artículo y la configuración de uso compartido antes de publicarlo.",
     tourOutro: "Todos los ajustes se guardan automáticamente. ¡Que lo disfrutes!",
   },
 

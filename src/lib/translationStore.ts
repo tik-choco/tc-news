@@ -8,7 +8,7 @@
 // Persisted via kvStore (mist KV, OPFS-backed; localStorage only as a
 // pre-hydration/fallback path — see kvStore.ts's module header).
 
-import { KV_VALUE_SOFT_LIMIT_BYTES, kvGetSync, kvSetSync, utf8ByteLength } from "./kvStore";
+import { loadKvRecords, persistKvRecords } from "./kvRecordStore";
 
 // Quota guard: this store persists full translated article bodies, so it's
 // one of the larger consumers of storage among tc-news's cache keys. Two
@@ -86,36 +86,11 @@ function coerceArticleTranslation(value: unknown): ArticleTranslation | null {
 }
 
 function loadAll(): Record<string, ArticleTranslation> {
-  try {
-    const raw = kvGetSync(TRANSLATIONS_KEY);
-    if (!raw) return {};
-    const parsed: unknown = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-    const out: Record<string, ArticleTranslation> = {};
-    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
-      const record = coerceArticleTranslation(v);
-      if (record) out[k] = record;
-    }
-    return out;
-  } catch {
-    return {};
-  }
+  return loadKvRecords(TRANSLATIONS_KEY, coerceArticleTranslation);
 }
 
 function persistAll(all: Record<string, ArticleTranslation>): void {
-  // Second safety net (see module header comment): MAX_TRANSLATIONS /
-  // MAX_PERSISTED_BODY_CHARS above already bound the typical payload by
-  // char count, but the mist KV rejects any single value over ~1MiB. Trim
-  // oldest-first (by translatedAt) until the serialized blob's UTF-8 byte
-  // length is back under the soft limit, so this store can never itself
-  // produce a KV write that's rejected outright.
-  let entries = Object.entries(all);
-  let serialized = JSON.stringify(Object.fromEntries(entries));
-  while (entries.length > 0 && utf8ByteLength(serialized) > KV_VALUE_SOFT_LIMIT_BYTES) {
-    entries = entries.sort((a, b) => b[1].translatedAt - a[1].translatedAt).slice(0, -1);
-    serialized = JSON.stringify(Object.fromEntries(entries));
-  }
-  kvSetSync(TRANSLATIONS_KEY, serialized);
+  persistKvRecords(TRANSLATIONS_KEY, all, (record) => record.translatedAt);
 }
 
 /** 記事×言語の翻訳(あれば)。無ければnull — 呼び出し側はLLM翻訳を実行する合図として使う。 */

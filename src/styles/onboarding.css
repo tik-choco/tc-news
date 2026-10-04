@@ -325,3 +325,12 @@
   display: flex;
   gap: var(--space-2);
 }
+
+.ob-welcome-actions {
+  width: 100%;
+  flex-wrap: wrap;
+}
+
+.ob-welcome-actions .ob-btn {
+  flex: 1 1 180px;
+}

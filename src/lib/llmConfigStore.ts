@@ -1,20 +1,4 @@
-// tc-news-local wrapper around the vendored tc-shared-llm-config-v1 contract
-// (lib/llmConfig.ts). llmConfig.ts itself is byte-identical across every
-// tc-* app and must not be hand-edited (see its header), so the safety nets
-// tc-news needs — read-modify-write against the *current* storage value
-// (not a stale in-memory snapshot), corrupted-record and write-failure
-// detection, and same-tab change notification — live here instead.
-//
-// Why this exists: naively doing
-//   const cfg = someStaleConfigFromState; mutate(cfg); saveLlmConfig(cfg);
-// re-persists whatever `cfg` happened to be captured as, discarding any
-// provider/preset another tab (or another same-tab caller) wrote in the
-// meantime. And a corrupted record — the raw key exists but
-// loadLlmConfig() returns null because it failed sanitizeLlmConfig() — must
-// never be "healed" by writing emptyLlmConfig() over it: that's exactly the
-// merge-never-delete violation llmConfig.ts's header warns against.
-
-import { LLM_CONFIG_KEY, emptyLlmConfig, loadLlmConfig, saveLlmConfig } from "./llmConfig";
+import { LLM_CONFIG_KEY, emptyLlmConfig, loadLlmConfig, saveLlmConfig, subscribeLlmConfig } from "./llmConfig";
 import type { SharedLlmConfigV1 } from "./llmConfig";
 
 export type LlmConfigUpdateResult =
@@ -68,31 +52,10 @@ export function updateLlmConfig(mutate: (config: SharedLlmConfigV1) => void): Ll
     return { ok: false, reason: "write-failed", config: cfg };
   }
 
-  for (const listener of listeners) listener(cfg);
   return { ok: true, config: cfg };
 }
 
-// ---- change subscription ----------------------------------------------------
-// vendoredなsubscribeLlmConfig(lib/llmConfig.ts)は他タブからのstorageイベント
-// しか拾えず、同一タブ内でupdateLlmConfig()を呼んだ本人以外の購読者(例えば同じ
-// タブの別コンポーネント)には何も届かない。tc-news内のUIは常にこちらを使うこと。
-
-type LlmConfigStoreListener = (config: SharedLlmConfigV1 | null) => void;
-const listeners = new Set<LlmConfigStoreListener>();
-let storageHooked = false;
-
-/** 同一タブのupdateLlmConfig通知 + 他タブのstorageイベントの両方を購読する。
- * vendoredなsubscribeLlmConfigは他タブのstorageイベントしか拾えないため、
- * tc-news内のUIはこちらを使うこと。unsubscribe関数を返す。 */
-export function subscribeLlmConfigStore(cb: LlmConfigStoreListener): () => void {
-  if (!storageHooked && typeof window !== "undefined") {
-    storageHooked = true;
-    window.addEventListener("storage", (e) => {
-      if (e.key !== LLM_CONFIG_KEY) return;
-      const current = loadLlmConfig();
-      for (const l of listeners) l(current);
-    });
-  }
-  listeners.add(cb);
-  return () => listeners.delete(cb);
+// Library notifications cover both same-tab settings/catalog saves and other tabs.
+export function subscribeLlmConfigStore(cb: (config: SharedLlmConfigV1 | null) => void): () => void {
+  return subscribeLlmConfig(cb);
 }

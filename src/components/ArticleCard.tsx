@@ -95,8 +95,8 @@ function ArticleCardImpl(props: {
             <span class="article-card-time">{formatRelativeTime(article.createdAt, locale)}</span>
             {article.shared ? <span class="badge badge--shared">{t("articles.sharedBadge")}</span> : null}
             {typeof evaluationScore === "number" ? (
-              <span class="eval-score-pill" title={t("articles.evalOverall")}>
-                {Math.round(evaluationScore)}
+              <span class="eval-score-pill" title={t("articles.evalScope")}>
+                {t("articles.evalScoreLabel", { score: Math.round(evaluationScore) })}
               </span>
             ) : null}
           </div>

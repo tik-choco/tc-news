@@ -33,6 +33,8 @@ export function EvaluationPanel(props: {
         </button>
       </header>
 
+      <p class="evaluation-panel-scope">{t("articles.evalScope")}</p>
+
       <ul class="evaluation-panel-axes">
         {ARTICLE_AXES.map((axis) => {
           const score = record.scores[axis.key] ?? 0;

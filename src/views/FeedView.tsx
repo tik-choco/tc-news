@@ -21,7 +21,6 @@ import type { AppSettings, FeedItem, NewsArticle, RadioProgram } from "../types"
 import { useFeeds } from "../hooks/useFeeds";
 import { generateArticle } from "../lib/generate";
 import { runOrchestratedGeneration } from "../lib/orchestrate";
-import { loadProviderSettings } from "../lib/llmSettings";
 import { isMuted, loadMutedDids } from "../lib/muteStore";
 import { groupNearDuplicateItems } from "../lib/feedDedupe";
 import { loadPrograms } from "../lib/programStore";
@@ -36,6 +35,7 @@ import { HomeArticleSections } from "../components/HomeArticleSections";
 import { ProgramCard } from "../components/ProgramCard";
 import { EmptyState } from "../components/EmptyState";
 import { GenerateBar } from "../components/GenerateBar";
+import { useRecommendationSnapshot } from "../hooks/useRecommendations";
 import { LOCALE_LABELS, useLocale, useT, type Locale } from "../lib/i18n";
 import { safeSetItem } from "../lib/safeStorage";
 import type { ArticleTranslation } from "../lib/translationStore";
@@ -66,8 +66,7 @@ const AUTO_GENERATE_THRESHOLD = 3;
 /** ブリーフィング生成ボタンが対象にする新着アイテムの上限件数。 */
 const BRIEFING_ITEM_LIMIT = 12;
 
-/** サイドバー折りたたみ状態の永続キー("1"=折りたたみ)。未保存なら
- * 「フィード登録済み=もう管理は済んでいる」とみなして折りたたみで始める。 */
+/** Sidebar preference; default to reading, with feed management one click away. */
 const SIDEBAR_COLLAPSED_KEY = "tc-news:feed-sidebar-collapsed";
 
 // AIジョブキュー(lib/jobQueue)のdedupキー。同じ選択に対する生成ジョブが
@@ -148,6 +147,8 @@ export function FeedView(props: {
   const [openItem, setOpenItem] = useState<FeedItem | null>(null);
   // Reader modal for "your articles" (旧ArticlesViewの activeId 相当)。
   const [openArticleId, setOpenArticleId] = useState<string | null>(null);
+  const [recommendationRefresh, setRecommendationRefresh] = useState(0);
+  const recommendationState = useRecommendationSnapshot(recommendationRefresh);
 
   // 番組(自分の分): このビューはタブ切り替えで毎回アンマウント/再マウント
   // されるので(ProgramViewと同様)、state初期化子でのloadPrograms()呼び出し
@@ -177,9 +178,7 @@ export function FeedView(props: {
   // (allPrograms は自分の分50件+受信済み分で無制限に増えうるため)。
   const [showAllPrograms, setShowAllPrograms] = useState(false);
 
-  // フィード管理サイドバーの折りたたみ。保存値があればそれを、なければ
-  // 「フィードがすでにあるなら畳む」を初期値にする(初回セットアップ中の
-  // ユーザーからは追加フォームを隠さない)。
+  // Preserve saved preferences. First-time readers start with the manager closed.
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
     try {
       const raw = localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
@@ -187,8 +186,15 @@ export function FeedView(props: {
     } catch {
       /* storage unavailable → session-only state */
     }
-    return feeds.length > 0;
+    return true;
   });
+  const [feedFormFocusRequest, setFeedFormFocusRequest] = useState(0);
+
+  function openFeedManager() {
+    setSidebarCollapsed(false);
+    safeSetItem(SIDEBAR_COLLAPSED_KEY, "0");
+    setFeedFormFocusRequest((request) => request + 1);
+  }
 
   function toggleSidebarCollapsed() {
     setSidebarCollapsed((prev) => {
@@ -294,7 +300,6 @@ export function FeedView(props: {
   async function runOrchestrated(targetItems: FeedItem[], userInstruction: string | undefined) {
     const targetId = buildTargetId(targetItems);
     if (findPendingJob("orchestrate", targetId)) return;
-    const provider = loadProviderSettings();
     setGenerating(true);
     setGenError(null);
     setStreamText("");
@@ -304,8 +309,8 @@ export function FeedView(props: {
         { kind: "orchestrate", targetId, label: t("feed.briefingGenerate") },
         async (signal, report) => {
           const result = await runOrchestratedGeneration(targetItems, {
-            orchestratorProfileId: provider.orchestratorPresetId,
-            workerProfileId: provider.workerPresetId,
+            orchestratorProfileId: "orchestrator",
+            workerProfileId: "worker",
             instruction: userInstruction,
             authorDid,
             authorName,
@@ -450,10 +455,14 @@ export function FeedView(props: {
         feeds={feeds}
         collapsed={sidebarCollapsed}
         onToggleCollapsed={toggleSidebarCollapsed}
+        focusRequest={feedFormFocusRequest}
         refreshing={refreshing}
         lastRefreshedAt={lastRefreshedAt}
         errors={errors}
-        onRefreshAll={() => void refreshAll()}
+        onRefreshAll={() => {
+          setRecommendationRefresh((value) => value + 1);
+          void refreshAll();
+        }}
         onAddFeed={addFeed}
         onRemoveFeed={removeFeed}
         onToggleFeed={toggleFeed}
@@ -486,10 +495,14 @@ export function FeedView(props: {
             articles={articles}
             onOpenArticle={openArticle}
             briefingDisabled={isGenerating || items.length === 0}
+            hasFeedItems={items.length > 0}
             onBriefingClick={handleBriefingClick}
+            onManageFeeds={openFeedManager}
             globalArticles={visibleGlobalArticles}
             globalConnected={globalConnected}
             onOpenGlobal={onOpenGlobal}
+            recommendationState={recommendationState}
+            trackImpressions={!openItem && !openArticleRecord}
           />
         ) : null}
 
@@ -532,7 +545,7 @@ export function FeedView(props: {
           </section>
         ) : null}
 
-        {showArticleSections ? (
+        {showArticleSections && (feeds.length > 0 || items.length > 0) ? (
           <FeedInbox
             items={items}
             hasFeeds={feeds.length > 0}
@@ -540,6 +553,8 @@ export function FeedView(props: {
             onToggleSelect={toggleSelect}
             onSelectMany={selectMany}
             onOpenItem={setOpenItem}
+            recommendationState={recommendationState}
+            trackImpressions={!openItem && !openArticleRecord}
           />
         ) : null}
       </section>
