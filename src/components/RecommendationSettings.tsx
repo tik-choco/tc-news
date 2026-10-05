@@ -1,4 +1,6 @@
 import { useState } from "preact/hooks";
+import { Switch } from "@tik-choco/mistai/preact";
+import "@tik-choco/mistai/ui.css";
 import { useInterests } from "../hooks/useInterests";
 import { resetInterests, setInterestEnabled, setInterestFeedback, setRecommendationMode } from "../lib/interestStore";
 import { useT } from "../lib/i18n";
@@ -13,11 +15,11 @@ export function RecommendationSettings() {
     <section class="recommendation-settings" aria-labelledby="recommendation-settings-heading">
       <h2 id="recommendation-settings-heading" class="settings-heading">{t("recommendation.settings")}</h2>
       <p class="field-hint">{t("recommendation.hint")}</p>
-      <label class="checkbox-field">
-        <input type="checkbox" checked={state.enabled}
-          onChange={(e) => { setInterestEnabled(e.currentTarget.checked); setResetDone(false); }} />
+      <div class="checkbox-field">
+        <Switch label={t("recommendation.enabled")} checked={state.enabled}
+          onChange={next => { setInterestEnabled(next); setResetDone(false); }} />
         <span>{t("recommendation.enabled")}<span class="field-hint">{t("recommendation.privacy")}</span></span>
-      </label>
+      </div>
       {!state.enabled ? <p class="field-hint">{t("recommendation.paused")}</p> : null}
       <label class="field">
         <span>{t("recommendation.order")}</span>

@@ -19,7 +19,7 @@ describe("recommendation settings", () => {
   it("pauses recording, selects newest-first, and preserves existing history for resume", () => {
     const token = beginReading(candidate)!;
     const ui = render(<RecommendationSettings />);
-    fireEvent.click(ui.getByRole("checkbox"));
+    fireEvent.click(ui.getByRole("switch", { name: "recommendation.enabled" }));
     expect(loadInterests().enabled).toBe(false);
     const order = ui.getByRole("combobox", { name: "recommendation.order" }) as HTMLSelectElement;
     expect(order.value).toBe("latest");
@@ -31,7 +31,7 @@ describe("recommendation settings", () => {
       updateReading(candidate, token, 30_000, "full");
     });
     expect(loadInterests()).toBe(before);
-    fireEvent.click(ui.getByRole("checkbox"));
+    fireEvent.click(ui.getByRole("switch", { name: "recommendation.enabled" }));
     expect(loadInterests().records).toHaveLength(1);
     expect(order.disabled).toBe(false);
     expect(order.value).toBe("recommended");
@@ -53,16 +53,21 @@ describe("recommendation settings", () => {
   it("changes the default article order without a manual recommendation update", () => {
     const ui = render(<RecommendationSettings />);
     expect(ui.queryByRole("button", { name: /recommendation.refresh/ })).toBeNull();
-    fireEvent.change(ui.getByRole("combobox", { name: "recommendation.order" }), { target: { value: "latest" } });
+    const order = ui.getByRole("combobox", { name: "recommendation.order" }) as HTMLSelectElement;
+    // mistai loads preact/compat; the test helper remaps fireEvent.change to
+    // input, but a native select still listens for change.
+    order.value = "latest";
+    fireEvent(order, new Event("change", { bubbles: true }));
     expect(loadInterests().mode).toBe("latest");
-    fireEvent.change(ui.getByRole("combobox", { name: "recommendation.order" }), { target: { value: "recommended" } });
+    order.value = "recommended";
+    fireEvent(order, new Event("change", { bubbles: true }));
     expect(loadInterests().mode).toBe("recommended");
   });
 
   it("can restore a hidden article while learning stays paused", () => {
     setInterestFeedback(candidate, "less");
     const ui = render(<RecommendationSettings />);
-    fireEvent.click(ui.getByRole("checkbox"));
+    fireEvent.click(ui.getByRole("switch", { name: "recommendation.enabled" }));
     fireEvent.click(ui.getByText("recommendation.hidden"));
     fireEvent.click(ui.getByRole("button", { name: "recommendation.restore" }));
     expect(loadInterests().enabled).toBe(false);

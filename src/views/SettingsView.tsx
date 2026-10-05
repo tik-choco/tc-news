@@ -2,7 +2,7 @@ import { useEffect, useState } from "preact/hooks";
 import type { JSX } from "preact";
 import { AlertTriangle, Fingerprint, Settings as SettingsIcon, Sliders, Sparkles, Cpu } from "lucide-preact";
 import { MESSAGES_EN, MESSAGES_JA, formatMistaiError } from "@tik-choco/mistai";
-import { LlmSettings } from "@tik-choco/mistai/preact";
+import { LlmSettings, Switch } from "@tik-choco/mistai/preact";
 import "@tik-choco/mistai/ui.css";
 import { loadDelegationFor, subscribeDelegation, type DelegationV1 } from "@tik-choco/mistai/identity";
 import { ensureDidIdentity } from "../crypto/didIdentity";
@@ -155,27 +155,19 @@ export function SettingsView({ settings, onSettingsChange }: {
               />
             </label>
 
-            <label class="checkbox-field">
-              <input
-                type="checkbox"
-                checked={settings.autoGenerate}
-                onChange={(e) => updateGeneral({ autoGenerate: e.currentTarget.checked })}
-              />
+            <div class="checkbox-field">
+              <Switch label={t("settings.autoGenerate")} checked={settings.autoGenerate} onChange={autoGenerate => updateGeneral({ autoGenerate })} />
               <span>{t("settings.autoGenerate")}</span>
-            </label>
+            </div>
 
-            <label class="checkbox-field">
-              <input
-                type="checkbox"
-                checked={settings.programRuby}
-                onChange={(e) => updateGeneral({ programRuby: e.currentTarget.checked })}
-              />
+            <div class="checkbox-field">
+              <Switch label={t("settings.programRuby")} checked={settings.programRuby} onChange={programRuby => updateGeneral({ programRuby })} />
               <span>
                 {t("settings.programRuby")}
                 <br />
                 <span class="field-hint">{t("settings.programRubyHint")}</span>
               </span>
-            </label>
+            </div>
 
             <label class="field">
               <span>{t("settings.shareModeLabel")}</span>
@@ -191,31 +183,23 @@ export function SettingsView({ settings, onSettingsChange }: {
               <span class="field-hint">{t("settings.shareModeDesc")}</span>
             </label>
 
-            <label class="checkbox-field">
-              <input
-                type="checkbox"
-                checked={settings.globalShare}
-                onChange={(e) => updateGeneral({ globalShare: e.currentTarget.checked })}
-              />
+            <div class="checkbox-field">
+              <Switch label={t("settings.globalShareLabel")} checked={settings.globalShare} onChange={globalShare => updateGeneral({ globalShare })} />
               <span>
                 {t("settings.globalShareLabel")}
                 <br />
                 <span class="field-hint">{t("settings.globalShareDesc")}</span>
               </span>
-            </label>
+            </div>
 
-            <label class="checkbox-field">
-              <input
-                type="checkbox"
-                checked={settings.showMediaPreviews}
-                onChange={(e) => updateGeneral({ showMediaPreviews: e.currentTarget.checked })}
-              />
+            <div class="checkbox-field">
+              <Switch label={t("settings.showMediaPreviews")} checked={settings.showMediaPreviews} onChange={showMediaPreviews => updateGeneral({ showMediaPreviews })} />
               <span>
                 {t("settings.showMediaPreviews")}
                 <br />
                 <span class="field-hint">{t("settings.showMediaPreviewsHint")}</span>
               </span>
-            </label>
+            </div>
 
             <RecommendationSettings />
 

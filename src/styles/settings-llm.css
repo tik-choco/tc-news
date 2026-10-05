@@ -1,5 +1,5 @@
 /* mistai settings and its portals use the news design system. */
-.settings-inner, .ob-card {
+.settings-view, .ob-card {
   --mistai-surface: var(--surface);
   --mistai-surface-2: var(--surface-2);
   --mistai-border: var(--border);

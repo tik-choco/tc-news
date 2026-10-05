@@ -11,6 +11,7 @@
 //     field, unless the caller overrides it per playback via opts.openaiVoice.
 
 import type { SpeakSegmentsOptions, TtsPlayback } from "./tts";
+import { isTtsSpeed } from "@tik-choco/mistai";
 import { isNetworkProviderBaseUrl, roomIdFromBaseUrl, networkVoiceModelParam } from "./llmConfig";
 import { rooms } from "./network";
 
@@ -42,6 +43,7 @@ export async function synthesizeSpeech(text: string, tts: OpenAiVoiceConfig): Pr
       voice: tts.voice || "alloy",
       input: text,
       response_format: "mp3",
+      ...(isTtsSpeed(tts.speed) ? { speed: tts.speed } : {}),
     }),
   });
   if (!res.ok) {
