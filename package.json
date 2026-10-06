@@ -15,7 +15,7 @@
   "dependencies": {
     "@breezystack/lamejs": "^1.2.7",
     "@tik-choco/mistai": "github:tik-choco-lab/mistai",
-    "@tik-choco/mistlib": "0.6.0",
+    "@tik-choco/mistlib": "0.6.4",
     "dompurify": "^3.2.4",
     "lucide-preact": "^0.577.0",
     "marked": "^15.0.7",
