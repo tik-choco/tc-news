@@ -4,7 +4,7 @@ const mocks = vi.hoisted(() => ({
   init: vi.fn(), buildInfo: vi.fn(), construct: vi.fn(),
 }));
 vi.mock("@tik-choco/mistlib", () => ({ get_build_info: mocks.buildInfo }));
-vi.mock("../vendor/mistlib/wrappers/web/index.js", () => ({
+vi.mock("@tik-choco/mistlib-web", () => ({
   MistNode: class {
     constructor() { mocks.construct(); }
     init = mocks.init;

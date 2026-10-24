@@ -25,7 +25,7 @@ import {
   storage_kv_delete,
   storage_kv_get,
   storage_kv_set,
-} from "../vendor/mistlib/wrappers/web/index.js";
+} from "@tik-choco/mistlib-web";
 import { getNode } from "./mistClient";
 import { safeSetItem } from "./safeStorage";
 

@@ -15,12 +15,12 @@ https://tik-choco.github.io/tc-news/
 ## Development
 
 ```sh
-cp .env.example .env   # set MISTLIB_REPO
+cp .env.example .env   # optional: set MISTLIB_LOCAL for local engine development
 npm install
 npm run dev
 ```
 
-The `predev` / `prebuild` hooks run `scripts/fetch-mistlib.mjs`, which builds mistlib to WASM and vendors it into `src/vendor/mistlib/` (requires Rust + wasm-pack). The built output is committed, so no rebuild is needed unless you update mistlib.
+The mistlib engine (`@tik-choco/mistlib`) and JS wrapper (`@tik-choco/mistlib-web`) come from npm. Normal development needs no Rust toolchain. Set `MISTLIB_LOCAL` as documented in `.env.example` to use a local engine build.
 
 LLM providers are configured in the settings screen (base URL / API key / model). API keys are stored only in the browser's localStorage and never enter the repository.
 

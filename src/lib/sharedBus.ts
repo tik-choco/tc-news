@@ -1,6 +1,6 @@
 // Shared cross-app pointer/notification bus for the tik-choco app family,
 // deployed to the same origin in production (https://tik-choco.github.io/<app>/)
-// and already sharing localStorage (and, for apps that vendor mistlib, the
+// and already sharing localStorage (and, for apps that use mistlib, the
 // mistlib OPFS block store).
 //
 // IMPORTANT: this file is vendored identically (modulo TS/JS syntax) into

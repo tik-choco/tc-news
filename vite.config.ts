@@ -31,6 +31,9 @@ export default defineConfig(({ mode }) => {
   base: process.env.VITE_BASE_PATH || '/',
   plugins: [preact()],
   resolve: { alias },
+  optimizeDeps: {
+    exclude: ['@tik-choco/mistlib', '@tik-choco/mistlib-web'],
+  },
   define: {
     __MISTLIB_SOURCE__: JSON.stringify(localEngine ? 'local' : 'registry'),
   },

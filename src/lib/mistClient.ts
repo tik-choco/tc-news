@@ -1,5 +1,5 @@
-// Thin singleton wrapper around the vendored mistlib-wasm build (see
-// scripts/fetch-mistlib.mjs). mistlib-wasm only supports one active
+// Thin singleton wrapper around @tik-choco/mistlib-web from npm.
+// mistlib-wasm only supports one active
 // MistNode per page, and its node.onEvent()/onMediaEvent() each accept a
 // single handler that replaces any previous one — so this module owns the
 // one real MistNode instance and re-broadcasts events to any number of
@@ -11,7 +11,7 @@ import {
   storage_add,
   storage_get,
   type MediaEventPayload,
-} from "../vendor/mistlib/wrappers/web/index.js";
+} from "@tik-choco/mistlib-web";
 
 export {
   EVENT_NEIGHBORS,
@@ -21,7 +21,7 @@ export {
   MEDIA_EVENT_TRACK_REMOVED,
   DELIVERY_RELIABLE,
   DELIVERY_UNRELIABLE,
-} from "../vendor/mistlib/wrappers/web/index.js";
+} from "@tik-choco/mistlib-web";
 export { EVENT_RAW, storage_add, storage_get };
 export type { MediaEventPayload };
 

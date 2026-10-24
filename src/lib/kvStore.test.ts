@@ -17,7 +17,7 @@ const { kvMap, storageKvSet, storageKvGet, storageKvDelete } = vi.hoisted(() => 
   };
 });
 
-vi.mock("../vendor/mistlib/wrappers/web/index.js", () => ({
+vi.mock("@tik-choco/mistlib-web", () => ({
   storage_kv_set: storageKvSet,
   storage_kv_get: storageKvGet,
   storage_kv_delete: storageKvDelete,
