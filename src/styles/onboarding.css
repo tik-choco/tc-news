@@ -17,6 +17,14 @@
   animation: tc-ob-overlay-in var(--dur) var(--ease-out);
 }
 
+/* The wizard embeds mistai settings UI, whose popups ("+ 接続先を追加",
+   model/choice pickers) are portalled into document.body at z-index 30
+   (`.model-picker-overlay`) — below this overlay, so they opened invisibly
+   behind the wizard. Lift them above it while the wizard is mounted. */
+:root:has(.ob-overlay) .model-picker-overlay {
+  z-index: 101;
+}
+
 .ob-card {
   position: relative;
   width: 100%;
