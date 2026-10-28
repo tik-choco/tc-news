@@ -3,16 +3,18 @@ import { beforeEach, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   init: vi.fn(), buildInfo: vi.fn(), construct: vi.fn(),
 }));
-vi.mock("@tik-choco/mistlib", () => ({ get_build_info: mocks.buildInfo }));
-vi.mock("@tik-choco/mistlib-web", () => ({
+vi.mock("@tik-choco/mistlib", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@tik-choco/mistlib")>(),
+  get_build_info: mocks.buildInfo,
+}));
+vi.mock("@tik-choco/mistlib-web", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@tik-choco/mistlib-web")>(),
   MistNode: class {
     constructor() { mocks.construct(); }
     init = mocks.init;
     onEvent = vi.fn();
     onMediaEvent = vi.fn();
   },
-  EVENT_RAW: 1, EVENT_NEIGHBORS: 2, EVENT_PEER_CONNECTED: 3, EVENT_PEER_DISCONNECTED: 4,
-  MEDIA_EVENT_TRACK_ADDED: 5, MEDIA_EVENT_TRACK_REMOVED: 6, DELIVERY_RELIABLE: 1, DELIVERY_UNRELIABLE: 0,
   storage_add: vi.fn(), storage_get: vi.fn(),
 }));
 
